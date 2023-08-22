@@ -170,6 +170,7 @@ class MergedLinear(nn.Linear, LoRALayer):
                            merge_weights=merge_weights)
         assert out_features % len(enable_lora) == 0, \
             'The length of enable_lora must divide out_features'
+            
         self.enable_lora = enable_lora
         self.fan_in_fan_out = fan_in_fan_out
         # Actual trainable parameters

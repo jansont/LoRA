@@ -1,0 +1,43 @@
+#grafting args
+fact_data: datasets/chatgpt_fact_dataset.json   #path to fact data
+random_seed: 1                                  #random seed for reproducibility
+model_name: gpt2-small                          #huggingface model name
+use_hf_model: true                              #whether to load huggingface weights.
+use_resample_ablation: true                     #Use resample ablation. Else use noise ablation.
+use_mle_token_graft: true                       #Use MLE token graft. Else use target token graft.
+use_causal_graft: false                         #Use causal graft. Else use decomposition graft.
+noise_samples: 10                               #Number of noise samples to generate for counterfactual.
+graft_threshold : 0.75 
+
+#lora args              
+lora_dim: 2                                     #lora attn dimension
+lora_alpha: 128                                 #lora attn alpha
+lora_dropout: 0.0                               #dropout probability for lora layers   
+
+# Training Args    
+train_test_split: 0.9                           #train test split         
+train_data: path                                #location of training data corpus
+valid_data: path                                #location of validation data corpus
+train_batch_size: 8                             #training batch size
+valid_batch_size: 4                             #validation batch size
+grad_acc: 1                                     #gradient accumulation steps
+seq_len: 512                                    #number of tokens to predict.
+#model_card: gpt2.md                             # choices=['gpt2.sm', 'gpt2.md', 'gpt2.lg'], 
+
+init_checkpoint: null                           #pretrained checkpoint path')
+fp16: true                                      #train model with fp16')
+
+log_interval: 100                               #log interval
+eval_interval: 2000                             #eval interval
+save_interval: 500                              #save interval
+
+work_dir: null
+# work_dir', type=str, default=os.getenv('PT_OUTPUT_DIR', 'gpt2_model'),  help='working folder.')
+
+obj: clm                                        #language model training objective: clm, jlm
+label_smooth: 0.0                               #label smoothing
+roll_interval: -1                               #rolling interval
+roll_lr: 0.00001                                #rolling learning rate
+roll_step: 100                                  #rolling step
+eval_epoch: 1                                   #eval per number of epochs
+rank: 0
