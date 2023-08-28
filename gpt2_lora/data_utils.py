@@ -216,19 +216,21 @@ class FT_Dataset(Dataset):
         self.infix_cursor = infix_cursor
 
     def __len__(self):
-        return self.num_batches * self.batch_size
+        return len(self.ft_samples)
         
     def __getitem__(self, item):
         if(item >= self.num_examples):
             item = self.rng.randint(0, self.num_examples - 1)
 
         example = self.ft_samples[item]
+        
         context = example[0]
         completion = example[1]
 
         pretokens = [i + self.prefix_cursor for i in range(0, self.prefix_len)] 
         intokens = [i + self.infix_cursor for i in range(0, self.infix_len)] 
-
+        
+        #note: conditions = context (prefix + infix are empty)
         conditions = pretokens + context + intokens 
         _input, _input_len = padding_tokens(conditions + completion, self.max_seq_length, 0, 1)
 

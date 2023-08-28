@@ -1,3 +1,10 @@
+
+wandb
+build
+gpt2_model
+*.pickle
+
+
 # all files with SCRATCH prefix and large model / metric files
 **/SCRATCH*
 /pretrained_checkpoints

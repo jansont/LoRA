@@ -1,8 +1,45 @@
 import torch
 from transformer_lens.HookedTransformer import HookedTransformer
 
+def get_mask(prompt_tokens, subject_tokens): 
+    A_flattened = prompt_tokens.view(-1)
+    B_flattened = subject_tokens.view(-1)
 
-def resample_ablation(model: HookedTransformer,
+    mask = torch.zeros_like(A_flattened, dtype=torch.bool)
+
+    for i in range(len(A_flattened) - len(B_flattened) + 1):
+        if torch.all(A_flattened[i:i+len(B_flattened)] == B_flattened):
+            mask[i:i+len(B_flattened)] = True
+            
+    return mask
+
+def resample_ablation(model, prompt, subject, target, n_noise_samples=20, temperature=0.85):
+    subject = " " + subject
+    subject_tokens = model.to_tokens(subject)[:,1:]
+    n_subject_tokens = subject_tokens.shape[-1]
+    prompt_start = prompt.split("{")[0]
+    clean_fact = prompt.format(subject)
+    
+    fact_tokens = model.to_tokens(clean_fact)
+    clean_subject_mask = get_mask(fact_tokens, subject_tokens)
+    corrupted_facts = []        
+    while len(corrupted_facts) < n_noise_samples: 
+        generated = model.generate(prompt_start, max_new_tokens=n_subject_tokens,temperature=temperature,verbose=False)
+        corrupted_subject = generated.split(prompt_start)[-1].strip()
+        corrupted_fact = prompt.format(corrupted_subject)
+        corrupted_subject_tokens = model.to_tokens(corrupted_subject)[:,1:]
+        corrupted_fact_tokens = model.to_tokens(corrupted_fact)
+        
+        corrupted_mask = get_mask(prompt_tokens=corrupted_fact_tokens, subject_tokens=corrupted_subject_tokens)
+        if corrupted_mask.shape != clean_subject_mask.shape: 
+            continue
+        if all(corrupted_mask==clean_subject_mask):
+            corrupted_facts.append(corrupted_fact)
+
+    return clean_fact, corrupted_facts, target
+
+
+def resample_ablation_uniform(model: HookedTransformer,
                       prompt: str, 
                       subject: str,
                       target: str, 

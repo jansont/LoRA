@@ -19,6 +19,58 @@ from torch.nn.parameter import Parameter
 
 import loralib as lora
 
+class LORAConfig(object): 
+    def __init__(
+        self,
+        layer : int,
+        layer_type : str, 
+        adapt_attn_c_attn : bool = False, 
+        adapt_attn_c_proj : bool = False,
+        adapt_mlp_c_fc : bool = False,
+        adapt_mlp_c_proj : bool = False,
+        lora_dim=0,
+        lora_alpha=128,
+        lora_dropout=0.0,
+        lora_r_dropout=0.0,
+    ): 
+        if layer_type not in ['attn', 'mlp']:
+            raise ValueError("layer_type should be 'attn' or 'mlp'")
+        if layer_type=="attn" and adapt_mlp_c_fc or adapt_mlp_c_proj:
+            raise ValueError("layer_type is 'attn', but mlp layer is adapted")
+        if layer_type=="mlp" and adapt_attn_c_attn or adapt_attn_c_proj:
+            raise ValueError("layer_type is 'mlp', but attn layer is adapted")
+        if layer_type=="attn" and not adapt_attn_c_attn and not adapt_attn_c_proj:
+            lora_dim = 0
+        if layer_type=="mlp" and not adapt_mlp_c_fc and not adapt_mlp_c_proj:
+            lora_dim = 0
+
+        self.layer = layer
+        self.layer_type = layer_type
+        self.adapt_attn_c_attn = adapt_attn_c_attn
+        self.adapt_attn_c_proj = adapt_attn_c_proj
+        self.adapt_mlp_c_fc = adapt_mlp_c_fc
+        self.adapt_mlp_c_proj = adapt_mlp_c_proj
+        self.lora_dim = lora_dim
+        self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
+        self.lora_r_dropout = lora_r_dropout
+        
+    def __str__(self):
+        d = {
+            "layer": self.layer,
+            "layer_type": self.layer_type,
+            "adapt_attn_c_attn": self.adapt_attn_c_attn,
+            "adapt_attn_c_proj": self.adapt_attn_c_proj,
+            "adapt_mlp_c_fc": self.adapt_mlp_c_fc,
+            "adapt_mlp_c_proj": self.adapt_mlp_c_proj,
+            "lora_dim": self.lora_dim,
+            "lora_alpha": self.lora_alpha,
+            "lora_dropout": self.lora_dropout,
+            "lora_r_dropout": self.lora_r_dropout,
+        }
+        return str(d)
+        
+
 
 def gelu(x):
     return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
@@ -91,17 +143,28 @@ class Attention(nn.Module):
         self.n_head = config.n_head
         self.split_size = n_state
         self.scale = scale
-
+        dim = lora_config.lora_dim if lora_config.adapt_attn_c_attn else 0
         self.c_attn = lora.MergedLinear(
             nx, n_state * 3, 
-            r=lora_config.lora_dim, 
+            r=dim, 
             lora_alpha=lora_config.lora_alpha, 
             lora_dropout=lora_config.lora_dropout, 
             enable_lora=[True, False, True], 
             fan_in_fan_out=True,
             merge_weights=False
         )
-        self.c_proj = Conv1D(n_state, nx)
+        # self.c_proj = Conv1D(n_state, nx)
+        dim = lora_config.lora_dim if lora_config.adapt_attn_c_proj else 0
+        self.c_proj = lora.MergedLinear(
+            n_state, nx,
+            r=dim, 
+            lora_alpha=lora_config.lora_alpha, 
+            lora_dropout=lora_config.lora_dropout, 
+            enable_lora=[True], 
+            fan_in_fan_out=True,
+            merge_weights=False
+        )
+            
 
         self.config = config
     
@@ -190,19 +253,20 @@ class MLP(nn.Module):
         # self.c_fc = Conv1D(n_state, nx)
         # self.c_proj = Conv1D(nx, n_state)
         self.act = gelu
-        # WHAT IS ENABLE LORA
+        dim = lora_config.lora_dim if lora_config.adapt_mlp_c_fc else 0
         self.c_fc = lora.MergedLinear(
-            n_state, nx, 
-            r=lora_config.lora_dim, 
+            nx, n_state, 
+            r=dim, 
             lora_alpha=lora_config.lora_alpha, 
             lora_dropout=lora_config.lora_dropout, 
             enable_lora=[True], 
             fan_in_fan_out=True,
             merge_weights=False
         )
+        dim = lora_config.lora_dim if lora_config.adapt_mlp_c_proj else 0
         self.c_proj = lora.MergedLinear(
-            nx, n_state, 
-            r=lora_config.lora_dim, 
+            n_state, nx, 
+            r=dim, 
             lora_alpha=lora_config.lora_alpha, 
             lora_dropout=lora_config.lora_dropout, 
             enable_lora=[True], 
@@ -236,22 +300,21 @@ class Block(nn.Module):
         return x, present
 
 def get_lora_config(layer, lora_configs):
-    layer_configs = [c for c in lora_configs if c.layer == layer]
-    mlp_config = next((c for c in layer_configs if c.adapt_mlp), None)
-    attn_config = next((c for c in layer_configs if not c.adapt_mlp), None)
+    layer_config = lora_configs[layer]
+    if layer_config["mlp"] is None: 
+        mlp_config = LORAConfig(layer=layer,layer_type="mlp", adapt_mlp_c_fc=False, adapt_mlp_c_proj=False, lora_dim=0)
+    else: 
+        mlp_config = layer_config["mlp"]
+        assert mlp_config.layer_type == "mlp"
+        assert mlp_config.layer == layer
+        
+    if layer_config["attn"] is None: 
+        attn_config = LORAConfig(layer=layer,layer_type="attn", adapt_attn_c_attn=False, adapt_attn_c_proj=False, lora_dim=0)
+    else:
+        attn_config = layer_config["attn"]
+        assert attn_config.layer_type == "attn"
+        assert attn_config.layer == layer
 
-    if not mlp_config: 
-        mlp_config = LORAConfig(
-            layer=layer,
-            adapt_mlp=True, 
-            lora_dim=0,
-        )
-    if not attn_config:
-        attn_config = LORAConfig(
-            layer=layer,
-            adapt_mlp=False, 
-            lora_dim=0,
-        )
     return attn_config, mlp_config
 
 class GPT2Model(nn.Module):
@@ -345,22 +408,8 @@ class GPT2LMHead(nn.Module):
         lm_logits = self.decoder(hidden_state)
         return lm_logits
 
-class LORAConfig(object): 
-    def __init__(
-        self,
-        layer, 
-        adapt_mlp=False,
-        lora_dim=0,
-        lora_alpha=128,
-        lora_dropout=0.0,
-        lora_r_dropout=0.0,
-    ): 
-        self.layer = layer
-        self.adapt_mlp = adapt_mlp
-        self.lora_dim = lora_dim
-        self.lora_alpha = lora_alpha
-        self.lora_dropout = lora_dropout
-        self.lora_r_dropout = lora_r_dropout
+
+    
         
 class GPT2Config(object):
     def __init__(
@@ -463,6 +512,7 @@ class GPT2LMModel(nn.Module):
                 return lm_logits, loss, _t1_acc, _all_acc
             else:
                 return lm_logits, loss
+            
         return lm_logits, presents
            
     def _init_weights(self, module):

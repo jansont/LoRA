@@ -1,0 +1,14 @@
+{
+    "testing_loss": 10.92226791381836,
+    "neighbourhood_loss": 10.212419509887695,
+    "same_attribute_loss": 11.788634300231934,
+    "testing_ppl": 55396.29060018741,
+    "neighbourhood_ppl": 27239.39390650741,
+    "same_attribute_ppl": 131746.42090549716,
+    "testing_t1": 0.0,
+    "neighbourhood_t1": 0.0,
+    "same_attribute_t1": 0.0,
+    "testing_acc": 0.0,
+    "neighbourhood_acc": 0.0,
+    "same_attribute_acc": 0.0
+}

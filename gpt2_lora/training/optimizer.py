@@ -7,7 +7,7 @@ import math
 import os
 from collections import OrderedDict 
 import argparse
-
+import types
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss
@@ -15,9 +15,23 @@ import torch.nn.functional as F
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR, _LRScheduler
 
+def add_optimizer_params_namespace(args: types.SimpleNamespace):
+    args.lr = 0.0001
+    args.weight_decay = 0.01
+    args.correct_bias = False
+    args.adam_epislon = 1e-6
+    args.no_decay_bias = False
+    args.adam_beta1 = 0.9
+    args.adam_beta2 = 0.98
+    args.scheduler = 'linear'
+    args.max_step = None
+    args.warmup_step = 0
+    args.i_steps = '0'
+    args.i_lrs = '0.00025'
+    return args
 
 def add_optimizer_params(parser: argparse.ArgumentParser):
-    parser.add_argument('--lr', default=0.00001, type=float, help='learning rate')
+    parser.add_argument('--lr', default=0.0001, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=0.01, type=float, help='weight decay rate')
     parser.add_argument('--correct_bias', action='store_true', help='correct adam bias term')
     parser.add_argument('--adam_epislon', default=1e-6, type=float, help='adam epsilon')

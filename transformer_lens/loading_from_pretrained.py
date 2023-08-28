@@ -925,6 +925,7 @@ def get_pretrained_state_dict(
     official_model_name: str,
     cfg: HookedTransformerConfig,
     hf_model=None,
+    lora_case=False,
     **kwargs,
 ) -> Dict[str, torch.Tensor]:
     """
@@ -1002,7 +1003,7 @@ def get_pretrained_state_dict(
             param.requires_grad = False
 
         if cfg.original_architecture == "GPT2LMHeadModel":
-            state_dict = convert_gpt2_weights(hf_model, cfg)
+            state_dict = convert_gpt2_weights(hf_model, cfg, lora_case)
         elif cfg.original_architecture == "GPTNeoForCausalLM":
             state_dict = convert_neo_weights(hf_model, cfg)
         elif cfg.original_architecture == "OPTForCausalLM":
@@ -1054,7 +1055,8 @@ def fill_missing_keys(model, state_dict):
 
 
 # Convert state dicts
-def convert_gpt2_weights(gpt2, cfg: HookedTransformerConfig):
+def convert_gpt2_weights(gpt2, cfg: HookedTransformerConfig, lora_case=False):
+    
     state_dict = {}
 
     state_dict["embed.W_E"] = gpt2.transformer.wte.weight
@@ -1097,14 +1099,22 @@ def convert_gpt2_weights(gpt2, cfg: HookedTransformerConfig):
         state_dict[f"blocks.{l}.ln2.b"] = gpt2.transformer.h[l].ln_2.bias
 
         W_in = gpt2.transformer.h[l].mlp.c_fc.weight
-        state_dict[f"blocks.{l}.mlp.W_in"] = W_in
-        state_dict[f"blocks.{l}.mlp.b_in"] = gpt2.transformer.h[l].mlp.c_fc.bias
-
         W_out = gpt2.transformer.h[l].mlp.c_proj.weight
-        state_dict[f"blocks.{l}.mlp.W_out"] = W_out
-        state_dict[f"blocks.{l}.mlp.b_out"] = gpt2.transformer.h[l].mlp.c_proj.bias
-    state_dict["unembed.W_U"] = gpt2.lm_head.weight.T
+        
+        if lora_case: 
+            state_dict[f"blocks.{l}.mlp.W_in"] = W_in.T 
+            state_dict[f"blocks.{l}.mlp.b_in"] = gpt2.transformer.h[l].mlp.c_proj.bias
+            state_dict[f"blocks.{l}.mlp.W_out"] = W_out.T            
+            state_dict[f"blocks.{l}.mlp.b_out"] = gpt2.transformer.h[l].mlp.c_fc.bias
 
+        else: 
+            state_dict[f"blocks.{l}.mlp.W_in"] = W_in
+            state_dict[f"blocks.{l}.mlp.b_in"] = gpt2.transformer.h[l].mlp.c_fc.bias   
+            state_dict[f"blocks.{l}.mlp.W_out"] = W_out            
+            state_dict[f"blocks.{l}.mlp.b_out"] = gpt2.transformer.h[l].mlp.c_proj.bias
+            
+   
+    state_dict["unembed.W_U"] = gpt2.lm_head.weight.T
     state_dict["ln_final.w"] = gpt2.transformer.ln_f.weight
     state_dict["ln_final.b"] = gpt2.transformer.ln_f.bias
     return state_dict

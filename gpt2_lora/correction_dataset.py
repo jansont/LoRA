@@ -2,6 +2,32 @@ import json
 from pathlib import Path
 from torch.utils.data import Dataset
 
+def create_lm_dataset(prompts, tokenizer, args):
+    tokenized_prompts = [
+        tokenizer.encode(text, add_special_tokens=False)
+        for text in prompts
+    ]       
+    dataset = []
+    for tokenized_prompt in tokenized_prompts:
+        split_size = max(int(len(tokenized_prompt) * args.completion_size), 1)
+        context = tokenized_prompt[:-split_size]
+        completion = tokenized_prompt[-split_size:]
+        dataset.append((context, completion))
+    return dataset
+
+def create_testing_dataset(prompts, tokenizer, args):
+    dataset = []
+    for prompt in prompts:
+        prompt = prompt.split()
+        context = prompt[:-1]
+        completion = prompt[-1]
+        dataset.append((
+            tokenizer.encode(context, add_special_tokens=False), 
+            tokenizer.encode(completion, add_special_tokens=False)
+        )) 
+    return dataset           
+
+
 class CorrectionDataset(Dataset):
     def __init__(self, 
                  dataset_path: Path, 

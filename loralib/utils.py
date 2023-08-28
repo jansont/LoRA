@@ -13,7 +13,7 @@ from .layers import LoRALayer
 def mark_only_lora_as_trainable(model: nn.Module, bias: str = 'none') -> None:
     for n, p in model.named_parameters():
         if 'lora_' not in n:
-            p.requires_grad = False
+            p.requires_grad = False    
     if bias == 'none':
         return
     elif bias == 'all':
@@ -28,6 +28,7 @@ def mark_only_lora_as_trainable(model: nn.Module, bias: str = 'none') -> None:
                     m.bias.requires_grad = True
     else:
         raise NotImplementedError
+    
 
 
 def lora_state_dict(model: nn.Module, bias: str = 'none') -> Dict[str, torch.Tensor]:
