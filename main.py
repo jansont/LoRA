@@ -80,14 +80,6 @@ def parse_args():
 
 
 def run_experiment(args): 
-    hooked_model = HookedTransformer.from_pretrained(
-            args.model_name,
-            center_unembed=True,  
-            center_writing_weights=True,              # Whether to center weights writing to the residual stream (ie set mean to be zero). Due to LayerNorm this doesn't change the computation.      
-            fold_ln=True,                             # Whether to  fold in the LayerNorm weights to the subsequent linear layer.
-            refactor_factored_attn_matrices=True,
-        )
-    
     correction_dataset = CorrectionDataset(args.fact_data)
     correction_dataloader = DataLoader(correction_dataset, batch_size=1)
     early_exit = False
@@ -96,6 +88,14 @@ def run_experiment(args):
     all_prompts = [] ; all_target = [] ; all_target_new = []
     
     for batch_idx, batch in enumerate(correction_dataloader):
+        torch.set_grad_enabled(False)
+        hooked_model = HookedTransformer.from_pretrained(
+            args.model_name,
+            center_unembed=True,  
+            center_writing_weights=True,              # Whether to center weights writing to the residual stream (ie set mean to be zero). Due to LayerNorm this doesn't change the computation.      
+            fold_ln=True,                             # Whether to  fold in the LayerNorm weights to the subsequent linear layer.
+            refactor_factored_attn_matrices=True,
+        )
         #----------------------------Prepare Correction Dataset-----------------------------#
         prompt = batch["prompt"][0]
         subject = batch["subject"][0]
@@ -187,6 +187,9 @@ def run_experiment(args):
             raise ValueError("model_name not recognized")
         print(config)
         
+        del hooked_model
+        torch.cuda.empty_cache()
+        torch.set_grad_enabled(True)
         print("..initializing model")
         lm_net = GPT2LMModel(config, lora_configs)
         print("a")
@@ -197,10 +200,6 @@ def run_experiment(args):
         state_dict = model.state_dict()
         print("d")
         lm_net.load_weight(state_dict)  
-        
-        del lm_net
-        del model
-        continue
         
         #-----------------------------Setup Traininable Parameters---------------------------------#
         print("setting trainable parameters")
@@ -382,12 +381,15 @@ def run_experiment(args):
         if batch_idx==100: 
             break
         
+
         del lm_net
+        del state_dict
+        del model
         del optimizer
         del scheduler
-        del model
         del tokenizer
-        del state_dict
+        torch.cuda.empty_cache()
+
         
     
     log_experiment(all_prompts, all_target, all_target_new, all_evaluations, all_init_evaluations, args)
