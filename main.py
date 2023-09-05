@@ -185,6 +185,7 @@ def run_experiment(args):
             )
         else: 
             raise ValueError("model_name not recognized")
+        print("..initializing model")
         lm_net = GPT2LMModel(config, lora_configs)
         model = GPT2LMHeadModel.from_pretrained(hf_model_name)
         tokenizer = GPT2Tokenizer.from_pretrained(hf_model_name)
@@ -192,6 +193,7 @@ def run_experiment(args):
         lm_net.load_weight(state_dict)  
         
         #-----------------------------Setup Traininable Parameters---------------------------------#
+        print("setting trainable parameters")
         if "lora" in args.task: 
             lora.mark_only_lora_as_trainable(lm_net)
         elif args.task=="finetune":
@@ -201,7 +203,7 @@ def run_experiment(args):
         else:
             raise ValueError("Task not recognized")
                 
-        print("REACH 3")
+        print("creating datasets")
         if args.fp16:
             try:
                 from torch.cuda import amp
@@ -232,11 +234,11 @@ def run_experiment(args):
             prompts=same_attribute_prompts, target=target_new,
             subject=subject, tokenizer=tokenizer, args=args
         )
-        same_attribute_dataset_ref = create_lm_dataset(
+        same_attribute_dataset = create_lm_dataset(
             prompts=same_attribute_prompts, target=target, 
             subject=subject, tokenizer=tokenizer, args=args
         )
-        reference_same_attribute_dataset = create_lm_dataset(
+        same_attribute_dataset_ref = create_lm_dataset(
             prompts=reference_same_attribute_prompts, target=target_new, 
             subject=subject, tokenizer=tokenizer, args=args
         )
@@ -321,7 +323,7 @@ def run_experiment(args):
         if args.max_step is None:
             args.max_step = (args.max_epoch * train_data.num_batches) 
             print('set max_step:', args.max_step)
-        print("REACH 4")
+        print("Training")
         scheduler = create_optimizer_scheduler(optimizer, args)
         if args.fp16:
             lm_net, optimizer = amp.initialize(lm_net, optimizer, opt_level="O1")
@@ -365,7 +367,7 @@ def run_experiment(args):
         if early_exit: 
             break
         
-        if batch_idx==10: 
+        if batch_idx==100: 
             break
     
     log_experiment(all_prompts, all_target, all_target_new, all_evaluations, all_init_evaluations, args)

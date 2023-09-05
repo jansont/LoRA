@@ -1062,10 +1062,6 @@ def convert_gpt2_weights(gpt2, cfg: HookedTransformerConfig, lora_case=False):
     state_dict["embed.W_E"] = gpt2.transformer.wte.weight
     state_dict["pos_embed.W_pos"] = gpt2.transformer.wpe.weight
 
-    print(cfg.n_layers)
-    print(len(gpt2.transformer.h))
-
-
     for l in range(cfg.n_layers):
         state_dict[f"blocks.{l}.ln1.w"] = gpt2.transformer.h[l].ln_1.weight
         state_dict[f"blocks.{l}.ln1.b"] = gpt2.transformer.h[l].ln_1.bias
