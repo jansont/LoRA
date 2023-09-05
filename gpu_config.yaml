@@ -2,7 +2,7 @@ name: gpt2-lora
 
 resources:
   cloud: aws
-  region: eu-west-1
+  region: us-east-1
   accelerators: A10G:1
   use_spot: true
   spot_recovery: 'FAILOVER'
