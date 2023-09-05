@@ -196,11 +196,11 @@ def padding_tokens(tokens, max_seq_length, pad_token, direct, max_context_length
 
 
 class FT_Dataset(Dataset):
-    def __init__(self, samples, batch_size, max_seq_length, 
+    def __init__(self, samples, ref_samples, batch_size, max_seq_length, 
                  max_eval_length=0, joint_lm=False, prefix_len=0, infix_len=0, 
                  prefix_cursor=1000000, infix_cursor=2000000):
-        self.ft_samples = samples
-        
+        self.ft_samples = samples        
+        self.ft_samples_ref = ref_samples
         self.batch_size = batch_size
         self.num_examples = len(self.ft_samples)
         self.max_seq_length = max_seq_length
@@ -217,16 +217,22 @@ class FT_Dataset(Dataset):
 
     def __len__(self):
         return len(self.ft_samples)
-        
-    def __getitem__(self, item):
+    
+    def get_sample(self, item, reference=False): 
         if(item >= self.num_examples):
             item = self.rng.randint(0, self.num_examples - 1)
 
-        example = self.ft_samples[item]
+        if reference: 
+            example = self.ft_samples_ref[item]
+        else: 
+            example = self.ft_samples[item]
+            
+        context = example["context"]
+        completion = example["full_completion"]
+        target_completion = example["target_completion"]
+        predict_target = example["predict_target"]
+        str_label = example["str_label"]
         
-        context = example[0]
-        completion = example[1]
-
         pretokens = [i + self.prefix_cursor for i in range(0, self.prefix_len)] 
         intokens = [i + self.infix_cursor for i in range(0, self.infix_len)] 
         
@@ -258,7 +264,35 @@ class FT_Dataset(Dataset):
         output["target"] = torch.tensor(_target, dtype=torch.long) 
 
         output["mask"] = torch.tensor(_msk, dtype=torch.float)
+        
+
+        pretokens = [i + self.prefix_cursor for i in range(0, self.prefix_len)] 
+        intokens = [i + self.infix_cursor for i in range(0, self.infix_len)] 
+        
+        #note: conditions = context (prefix + infix are empty)
+        conditions = pretokens + context + intokens 
+        _input, _input_len = padding_tokens(conditions + target_completion, self.max_seq_length, 0, 1)
+        pad_targets = [0 for i in range(0, self.prefix_len)] + context + [0 for i in range(0, self.infix_len)] + target_completion
+        _target, _ = padding_tokens(pad_targets[1:], self.max_seq_length, 0, 1)
+
+        if not self.joint_lm:
+            _eval_msk = [0.0] * (len(conditions) - 1) + [1.0] * (_input_len - len(conditions))
+        else:
+            _eval_msk = [1.0] * (_input_len - 1)
+
+        _eval_msk, _ = padding_tokens(_eval_msk, self.max_seq_length, 0.0, 1)
+        
+        output["eval_mask"] = torch.tensor(_eval_msk, dtype=torch.float)
+        output["predict_target"] = predict_target
+        output["str_label"] = str_label
         return output
+        
+    def __getitem__(self, item):
+        total_output = {
+            "normal" : self.get_sample(item, reference=False),
+            "reference" : self.get_sample(item, reference=True)
+        }
+        return total_output
 
     def read_ft_file(self, ft_file):
         ft_samples = []

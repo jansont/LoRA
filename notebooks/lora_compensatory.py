@@ -1,6 +1,7 @@
 import os
 import yaml
 import wandb
+import types
 import torch
 import random
 import argparse
@@ -78,11 +79,11 @@ def parse_args():
     print_args(args)
     return args
 
-def generate_lora_configs(layers_to_adapt : list[int], n_layers: int, args : types.SimpleNamespace):
+def generate_lora_configs(layer: int, n_layers: int, args : types.SimpleNamespace, adapt_attn=True):
     lora_configs = [
         {"attn" : None, "mlp" : None} for _ in range(n_layers)
     ]
-    for layer in layers_to_adapt: 
+    if adapt_attn:
         lora_configs[layer]["attn"] = LORAConfig(
                         layer=layer,
                         layer_type="attn",
@@ -93,7 +94,7 @@ def generate_lora_configs(layers_to_adapt : list[int], n_layers: int, args : typ
                         lora_dim=args.lora_dim,
                         lora_alpha=args.lora_alpha,
                         lora_dropout=args.lora_dropout)
-        
+    else: 
         lora_configs[layer]["mlp"] = LORAConfig(
                         layer=layer,
                         layer_type="mlp",
@@ -108,6 +109,9 @@ def generate_lora_configs(layers_to_adapt : list[int], n_layers: int, args : typ
 
 
 def run_experiment(args): 
+    
+    
+    
     hooked_model = HookedTransformer.from_pretrained(
             args.model_name,
             center_unembed=True,  
@@ -116,14 +120,18 @@ def run_experiment(args):
             refactor_factored_attn_matrices=True,
         )
     
+    
+    
+    
+    
+    
+    
+    
+    
+    
     correction_dataset = CorrectionDataset(args.fact_data)
     correction_dataloader = DataLoader(correction_dataset, batch_size=1)
     early_exit = False
-        
-    metrics = ["loss", "ppl", "t1", "acc"]
-    test_sets = ["testing", "neighbourhood", "same_attribute"]
-    test_metrics = [f"{t}_{m}" for m in metrics for t in test_sets]
-    test_metrics = {test_metric: AverageMeter() for test_metric in test_metrics}
     
     for batch in correction_dataloader:
         #----------------------------Prepare Correction Dataset-----------------------------#
@@ -133,13 +141,7 @@ def run_experiment(args):
         training_prompts = [prompt[0] for prompt in training_prompts]
         neighborhood_prompts = [prompt[0] for prompt in neighborhood_prompts]
         same_attribute_prompts = [prompt[0] for prompt in same_attribute_prompts]
-        print(prompt)
-        print(subject)
-        print(target)
-        print(target_new)
-        print(training_prompts)
-        print(neighborhood_prompts)
-        print(same_attribute_prompts)
+
         
         #---------------------------------Setup Model------------------------------------#
         if args.model_name == "gpt2-small":
@@ -157,164 +159,9 @@ def run_experiment(args):
         else: 
             raise ValueError("model_name not recognized")
         
-        windows = generate_windows(args)
-        for window in windows: 
-            lora_configs = generate_lora_configs(layers_to_adapt=window, n_layers=n_layer, args=args)
+        
     
-    lm_net = GPT2LMModel(config, lora_configs)
 
-    model = GPT2LMHeadModel.from_pretrained(hf_model_name)
-    tokenizer = GPT2Tokenizer.from_pretrained(hf_model_name)
-    state_dict = model.state_dict()
-    lm_net.load_weight(state_dict)  
-        
-        lm_net = GPT2LMModel(config, lora_configs)
-        model = GPT2LMHeadModel.from_pretrained(hf_model_name)
-        tokenizer = GPT2Tokenizer.from_pretrained(hf_model_name)
-        state_dict = model.state_dict()
-        lm_net.load_weight(state_dict)  
-        print("REACH 2")
-        #-----------------------------Setup Traininable Parameters---------------------------------#
-        if "lora" in args.task: 
-            lora.mark_only_lora_as_trainable(lm_net)
-        elif args.task=="finetune":
-            set_all_trainable(lm_net)
-        elif args.task=="graft_finetune":
-            set_trainable_from_graft(lm_net, graft)
-        else:
-            raise ValueError("Task not recognized")
-                
-        print("REACH 3")
-        if args.fp16:
-            try:
-                from torch.cuda import amp
-            except Exception as e:
-                warnings.warn('Could not import amp, apex may not be installed')
-        
-        if args.rank == 0:
-            work_dir = os.getenv('PT_OUTPUT_DIR', 'gpt2_model')
-            args.logging = create_exp_dir(work_dir)
-
-        dataset = create_lm_dataset(training_prompts, tokenizer, args)
-        neighbourhood_dataset = create_testing_dataset(neighborhood_prompts, tokenizer, args)
-        same_attribute_dataset = create_testing_dataset(same_attribute_prompts, tokenizer, args)
-        
-        training_prompts, valid_prompts = train_test_split(dataset, test_size=args.test_size, random_state=args.random_seed)
-        train_data = FT_Dataset(
-            samples=training_prompts,
-            batch_size=args.train_batch_size,
-            max_seq_length=args.seq_len, 
-            joint_lm=args.obj=='jlm'
-        )     
-        valid_data = FT_Dataset(
-            samples=valid_prompts,
-            batch_size=args.train_batch_size,
-            max_seq_length=args.seq_len, 
-            joint_lm=args.obj=='jlm'
-        )     
-        neighbourhood_data = FT_Dataset(
-            samples=neighbourhood_dataset,
-            batch_size=args.train_batch_size,
-            max_seq_length=args.seq_len, 
-            joint_lm=args.obj=='jlm'
-        )
-        same_attribute_data = FT_Dataset(
-            samples=same_attribute_dataset,
-            batch_size=args.train_batch_size,
-            max_seq_length=args.seq_len, 
-            joint_lm=args.obj=='jlm'
-        )        
-
-        train_loader = DataLoader(
-            train_data, batch_size=args.train_batch_size, num_workers=0, 
-            shuffle=False, pin_memory=False, drop_last=True,
-        )
-        valid_loader = DataLoader(
-            valid_data, batch_size=args.valid_batch_size, num_workers=0, 
-            shuffle=False, pin_memory=False, drop_last=False,
-        )
-        neighbourhood_loader = DataLoader(
-            neighbourhood_data, batch_size=len(neighbourhood_data), num_workers=0, 
-            shuffle=False, pin_memory=False, drop_last=False,
-        )
-        same_attribute_loader = DataLoader(
-            same_attribute_data, batch_size=len(same_attribute_data), num_workers=0, 
-            shuffle=False, pin_memory=False, drop_last=False,
-        )
-        
-        if args.init_checkpoint is not None:
-            print('loading model pretrained weight.')
-            lm_net.load_weight(torch.load(args.init_checkpoint))    
-            
-        if args.device=='cuda':
-            print('using cuda.')
-            lm_net = lm_net.cuda()
-
-        optimizer = create_adam_optimizer_from_args(lm_net, args)
-
-        if args.max_step is None:
-            args.max_step = (args.max_epoch * train_data.num_batches) 
-            print('set max_step:', args.max_step)
-        print("REACH 4")
-        scheduler = create_optimizer_scheduler(optimizer, args)
-        if args.fp16:
-            lm_net, optimizer = amp.initialize(lm_net, optimizer, opt_level="O1")
-        try:
-            train_step = 0
-            for epoch in itertools.count(start=1):
-                train_step = train_validate(
-                    lm_net, optimizer, scheduler, train_loader, valid_loader, args, 
-                    train_step=train_step, epoch=epoch
-                )
-                print("REACH 5")
-                
-                if train_step >= args.max_step or (args.max_epoch is not None and epoch >= args.max_epoch):
-                    if args.rank == 0:
-                        print('-' * 100)
-                        print('End of training')
-                    break
-        except KeyboardInterrupt:
-            if args.rank == 0:
-                print('-' * 100)
-                print('Exiting from training early')
-            early_exit = True
-
-
-        testing_loss, testing_ppl, testing_t1, testing_acc = evaluate(lm_net,
-                                                                        valid_loader,
-                                                                        args)
-        #evaluating specificity
-        neighbourhood_loss, neighbourhood_ppl, neighbourhood_t1, neighbourhood_acc  = evaluate(lm_net,
-                                                                                               neighbourhood_loader,
-                                                                                               args)
-
-        same_attribute_loss, same_attribute_ppl, same_attribute_t1, same_attribute_acc = evaluate(lm_net,
-                                                                                                  same_attribute_loader,
-                                                                                                  args)
-        # note: ppl: Perplexity(W) = exp(-sum(log(P(w_i))))
-        test_metrics["testing_loss"].update(testing_loss)
-        test_metrics["testing_ppl"].update(testing_ppl)
-        test_metrics["testing_t1"].update(testing_t1)
-        test_metrics["testing_acc"].update(testing_acc)
-        test_metrics["neighbourhood_loss"].update(neighbourhood_loss)
-        test_metrics["neighbourhood_ppl"].update(neighbourhood_ppl)
-        test_metrics["neighbourhood_t1"].update(neighbourhood_t1)
-        test_metrics["neighbourhood_acc"].update(neighbourhood_acc)
-        test_metrics["same_attribute_loss"].update(same_attribute_loss)
-        test_metrics["same_attribute_ppl"].update(same_attribute_ppl)
-        test_metrics["same_attribute_t1"].update(same_attribute_t1)
-        test_metrics["same_attribute_acc"].update(same_attribute_acc)
-        
-        if args.do_wandb:
-            wandb.log({k: v.val for k, v in test_metrics.items()})
-            
-        if args.do_wandb: 
-            run.finish()
-            
-        if early_exit: 
-            break
-        
-    log_experiment(args, test_metrics)
     
 
 

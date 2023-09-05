@@ -1,31 +1,44 @@
 import json
+import warnings
 from pathlib import Path
 from torch.utils.data import Dataset
 
-def create_lm_dataset(prompts, tokenizer, args):
-    tokenized_prompts = [
-        tokenizer.encode(text, add_special_tokens=False)
-        for text in prompts
-    ]       
+def create_lm_dataset(prompts, target, subject, tokenizer, args):
+    target = target.strip() ; subject = subject.strip()
     dataset = []
-    for tokenized_prompt in tokenized_prompts:
-        split_size = max(int(len(tokenized_prompt) * args.completion_size), 1)
-        context = tokenized_prompt[:-split_size]
-        completion = tokenized_prompt[-split_size:]
-        dataset.append((context, completion))
-    return dataset
-
-def create_testing_dataset(prompts, tokenizer, args):
-    dataset = []
-    for prompt in prompts:
-        prompt = prompt.split()
-        context = prompt[:-1]
-        completion = prompt[-1]
-        dataset.append((
-            tokenizer.encode(context, add_special_tokens=False), 
-            tokenizer.encode(completion, add_special_tokens=False)
-        )) 
-    return dataset           
+    for prompt in prompts: 
+        prompt = prompt.strip()
+        subject_position = prompt.lower().find(subject.lower())
+        target_position = prompt.lower().find(target.lower())
+        predict_target = target_position >= subject_position
+        
+        predict_idx = target_position if predict_target else subject_position
+        predict_len = len(target) if predict_target else len(subject)
+        predict_str = target if predict_target else subject
+        if predict_idx > 0: 
+            context = prompt[:predict_idx]
+            completion = prompt[predict_idx:]
+            target_completion = prompt[predict_idx:predict_idx+predict_len]      
+        else: 
+            warnings.warn("The subject or target does not seem to be in the prompt.")
+            tokenized_prompt = tokenizer.encode(prompt, add_special_tokens=False)
+            split_size = max(int(len(tokenized_prompt) * args.completion_size), 1)
+            context = tokenized_prompt[:-split_size]
+            completion = tokenized_prompt[-split_size:]
+            target_completion = completion
+            
+        tokenized_context = tokenizer.encode(context, add_special_tokens=False)
+        tokenized_full_completion = tokenizer.encode(completion, add_special_tokens=False)
+        tokenized_target_completion = tokenizer.encode(target_completion, add_special_tokens=False)
+        
+        dataset.append({
+            "context" : tokenized_context, 
+            "full_completion" : tokenized_full_completion, 
+            "target_completion" : tokenized_target_completion,
+            "predict_target" : predict_target,
+            "str_label" : predict_str
+        })
+    return dataset      
 
 
 class CorrectionDataset(Dataset):
@@ -58,10 +71,25 @@ class CorrectionDataset(Dataset):
         except KeyError: 
             raise KeyError("This dataset does not have training prompts. Please use the chat gpt dataset.")
         
-        return (prompt,
-                subject,
-                target,
-                target_new,
-                neighborhood_prompts,
-                same_attribute_prompts, 
-                training_prompts)
+        reference_evaluation_prompts = [
+            sentence.replace(target_new, target) for sentence in training_prompts
+            ]
+        reference_same_attribute_prompts = [
+            sentence.replace(target_new, target) for sentence in same_attribute_prompts
+            ]
+        reference_neighborhood_prompts = [
+            sentence.replace(target, target_new) for sentence in neighborhood_prompts
+            ]
+    
+        return {
+            "prompt" : prompt, 
+            "subject" : subject, 
+            "target" : target, 
+            "target_new" : target_new, 
+            "training_prompts" : training_prompts,
+            "reference_evaluation_prompts" : reference_evaluation_prompts,
+            "neighborhood_prompts" : neighborhood_prompts,
+            "reference_neighborhood_prompts" : reference_neighborhood_prompts,
+            "same_attribute_prompts" : same_attribute_prompts,
+            "reference_same_attribute_prompts" : reference_same_attribute_prompts,
+        }

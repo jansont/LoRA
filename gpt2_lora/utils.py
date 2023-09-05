@@ -67,7 +67,7 @@ def save_json(data, file_path):
     with open(file_path, 'w') as json_file:
         json.dump(data, json_file, indent=4, default=str)  # Use default=str to handle non-serializable objects
 
-def log_experiment(args, test_metrics):
+def log_experiment(all_prompts, all_target, all_target_new, all_evaluations, all_init_evaluations, args):
 
     experiment_dir = Path("experiments") / args.experiment_name
     
@@ -82,7 +82,21 @@ def log_experiment(args, test_metrics):
         
     args_dict = vars(args)
     save_json(args_dict, os.path.join(experiment_dir, "experiment_config.json"))
-    test_metrics = {
-        k:v.avg for k,v in test_metrics.items()
-    }
-    save_json(test_metrics, os.path.join(experiment_dir, "experiment_results.json"))    
+    
+    delta_results = []
+    for _eval, _init_eval in zip(all_evaluations, all_init_evaluations):
+        res = {}
+        for k in _eval.keys():
+            res[k] = _eval[k] - _init_eval[k]
+        delta_results.append(res)
+        
+        
+    for i, (prompt, target, new_target) in enumerate(zip(all_prompts, all_target, all_target_new)):
+        str_prompt = f"{prompt} : {target} -> {new_target}"
+        all_evaluations[i]["prompt"] = str_prompt
+        all_init_evaluations[i]["prompt"] = str_prompt
+        delta_results[i]["prompt"] = str_prompt
+        
+    save_json(all_evaluations, os.path.join(new_directory_path, "experiment_results.json"))    
+    save_json(all_init_evaluations, os.path.join(new_directory_path, "experiment_init_results.json"))  
+    save_json(delta_results, os.path.join(new_directory_path, "experiment_delta_results.json"))  

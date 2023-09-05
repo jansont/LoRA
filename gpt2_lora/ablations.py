@@ -44,26 +44,28 @@ def resample_ablation_uniform(model: HookedTransformer,
                       subject: str,
                       target: str, 
                       n_noise_samples=20) -> tuple[str, list[str], str]:
-
-    subject_tokens = model.to_tokens(subject)
+    subject = " " + subject
+    subject_tokens = model.to_tokens(subject)[:,1:]
+    n_subject_tokens = subject_tokens.shape[-1]
+    
+    clean_fact = prompt.format(subject)
+    fact_tokens = model.to_tokens(clean_fact)
+    clean_subject_mask = get_mask(fact_tokens, subject_tokens)
+    
     embedding = model.W_E
-    #we select n random rows from the embedding matrix
-    permutations = torch.randperm(embedding.size(0))[:n_noise_samples]
-    random_samples = embedding[permutations]
-    #unsqueeze a token dimension between batch and embedding dims
-    random_samples = random_samples.unsqueeze(dim=1)
-    #we de-embed these rows
-    random_embeddings = model.unembed(random_samples)
-    random_tokens = torch.argmax(random_embeddings, dim=-1)
-    random_subject_str = [
-        model.to_string(t) for t in random_tokens
-    ]
-    corrupted_facts = [
-        prompt.format(s) for s in random_subject_str
-    ]
-    true_fact = prompt.format(subject)
-    return true_fact, corrupted_facts, target
-
+    corrupted_facts = []
+    while len(corrupted_facts) < n_noise_samples: 
+    # for noise_sample in range(n_noise_samples): 
+        permutations = torch.randperm(embedding.size(0))[:clean_subject_mask.shape[-1]]        
+        random_samples = embedding[permutations]
+        random_samples = random_samples.unsqueeze(dim=1)
+        random_embeddings = model.unembed(random_samples)
+        random_tokens = torch.argmax(random_embeddings, dim=-1).squeeze()
+        random_tokens = random_tokens * clean_subject_mask + fact_tokens
+        random_string = model.to_string(random_tokens[:,1:])[0]
+        if model.to_tokens(random_string).shape[-1]==clean_subject_mask.shape[-1]:
+            corrupted_facts.append(random_string)
+    return clean_fact, corrupted_facts, target
 
 def noise_ablation(model, prompt, subject, target, n_noise_samples=5, vx=3, device="cuda"):
     subject_tokens = model.to_tokens(subject)

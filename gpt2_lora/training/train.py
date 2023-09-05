@@ -41,10 +41,7 @@ def train_validate(
 ):
     model.train()
     avg_lm_loss = AverageMeter()
-    avg_t1_train = AverageMeter()
-    avg_acc_train = AverageMeter()
-    avg_t1_val = AverageMeter()
-    avg_acc_val = AverageMeter()
+
     print('start to train the model................', epoch)
     log_start_time = time.time()
     best_val_ppl = None
@@ -53,18 +50,20 @@ def train_validate(
 
     for idx, data in enumerate(train_loader):
         data = {key: value for key, value in data.items()}
+        
+        data = data["normal"]
 
         _input = data['input'].to(args.device)
         _target = data['target'].to(args.device)
         _msk = data['mask'].to(args.device)
+        _eval_msk = data['eval_mask'].to(args.device)
 
-        _lm_logits, _lm_loss, t1, acc = model(
-            _input, lm_labels=_target, lm_mask=_msk, label_smooth=args.label_smooth, is_report_accuracy=True
+        _lm_logits, _lm_loss = model(
+            _input, lm_labels=_target, lm_mask=_msk, eval_mask=_eval_msk, label_smooth=args.label_smooth,
         ) 
 
         _lm_loss = _lm_loss.mean() 
-        t1 = t1.mean()
-        acc = acc.mean()
+  
 
         train_step += 1
         is_update = True if train_step % args.grad_acc == 0 else False
@@ -89,8 +88,6 @@ def train_validate(
                     "loss": avg_lm_loss.val,
                     "avg_loss": avg_lm_loss.avg,
                     "ppl": math.exp(avg_lm_loss.avg),
-                    "t1": avg_t1_train.avg,
-                    "acc": avg_acc_train.avg, 
                 })
                 
 
@@ -109,7 +106,11 @@ def train_validate(
         if train_step % args.eval_interval == 0:
             eval_start_time = time.time()
 
-            valid_loss, valid_ppl, val_t1, val_acc = evaluate(model, valid_loader, args)
+            evaluation = evaluate(model, valid_loader, args)
+            
+            valid_loss = evaluation["avg_lm_loss"]
+            valid_ppl = evaluation["avg_lm_ppl"]
+            
 
             if best_val_ppl is None or valid_ppl < best_val_ppl:
                 best_val_ppl = valid_ppl
@@ -119,13 +120,7 @@ def train_validate(
                       f'valid ppl {valid_ppl:5.2f} | best ppl {best_val_ppl:5.2f} '
                       
             if args.do_wandb:
-                wandb.log({
-                    "valid_loss": valid_loss,
-                    "valid_ppl": valid_ppl,
-                    "best_ppl": best_val_ppl, 
-                    "val_t1": val_t1,
-                    "val_acc": val_acc,
-                })
+                wandb.log(evaluation)
 
             if args.rank == 0:
                 print('-' * 100)

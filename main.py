@@ -14,7 +14,7 @@ from transformer_lens import HookedTransformer
 from gpt2_lora.data_utils import FT_Dataset
 from gpt2_lora.model import GPT2LMModel, GPT2Config
 from gpt2_lora.training.train import train_validate
-from gpt2_lora.correction_dataset import CorrectionDataset, create_lm_dataset, create_testing_dataset
+from gpt2_lora.correction_dataset import CorrectionDataset, create_lm_dataset
 import gpt2_lora.ablations as ablations
 import gpt2_lora.activation_graft as activation_grafts
 from gpt2_lora.training.optimizer import (
@@ -91,37 +91,39 @@ def run_experiment(args):
     correction_dataset = CorrectionDataset(args.fact_data)
     correction_dataloader = DataLoader(correction_dataset, batch_size=1)
     early_exit = False
-        
-    metrics = ["loss", "ppl", "t1", "acc"]
-    test_sets = ["testing", "neighbourhood", "same_attribute"]
-    test_metrics = [f"{t}_{m}" for m in metrics for t in test_sets]
-    test_metrics = {test_metric: AverageMeter() for test_metric in test_metrics}
     
-    for batch in correction_dataloader:
+    all_evaluations = [] ; all_init_evaluations = []
+    all_prompts = [] ; all_target = [] ; all_target_new = []
+    
+    for batch_idx, batch in enumerate(correction_dataloader):
         #----------------------------Prepare Correction Dataset-----------------------------#
-        (prompt, subject, target, target_new, neighborhood_prompts,
-                            same_attribute_prompts, training_prompts) = batch
-        prompt = prompt[0] ; subject = subject[0] ; target = target[0] ; target_new = target_new[0]
-        training_prompts = [prompt[0] for prompt in training_prompts]
-        neighborhood_prompts = [prompt[0] for prompt in neighborhood_prompts]
-        same_attribute_prompts = [prompt[0] for prompt in same_attribute_prompts]
+        prompt = batch["prompt"][0]
+        subject = batch["subject"][0]
+        target = batch["target"][0]
+        target_new = batch["target_new"][0]
+        training_prompts = [p[0] for p in batch["training_prompts"]]
+        reference_evaluation_prompts = [p[0] for p in batch["reference_evaluation_prompts"]]
+        neighborhood_prompts = [p[0] for p in batch["neighborhood_prompts"]]
+        reference_neighborhood_prompts = [p[0] for p in batch["reference_neighborhood_prompts"]]
+        same_attribute_prompts = [p[0] for p in batch["same_attribute_prompts"]]
+        reference_same_attribute_prompts = [p[0] for p in batch["reference_same_attribute_prompts"]]
+
         print(prompt)
         print(subject)
-        print(target)
-        print(target_new)
+        print(target, target_new)
         print(training_prompts)
-        print(neighborhood_prompts)
-        print(same_attribute_prompts)
+        print(reference_evaluation_prompts)
         
-    
         if args.ablation_method == "resample_uniform": 
-            original_fact, corrupted_facts, target = ablations.resample_ablation_uniform(hooked_model, prompt,subject,target,
+            original_fact, corrupted_facts, _ = ablations.resample_ablation_uniform(hooked_model, prompt,subject,target,
                                                                        n_noise_samples=args.noise_samples)
         elif args.ablation_method=="resample":
-            original_fact, corrupted_facts, target = ablations.resample_ablation(hooked_model, prompt, subject, target, n_noise_samples=args.noise_samples, temperature=args.temperature)
+            original_fact, corrupted_facts, _ = ablations.resample_ablation(hooked_model, prompt, subject, target, n_noise_samples=args.noise_samples, temperature=args.temperature)
         elif args.ablation_method=="noise": 
-            original_fact, corrupted_facts, target = ablations.noise_ablation(hooked_model, prompt,subject,target,
+            original_fact, corrupted_facts, _ = ablations.noise_ablation(hooked_model, prompt,subject,target,
                                                                     n_noise_samples=args.noise_samples)
+            
+        all_prompts.append(original_fact) ; all_target.append(target) ; all_target_new.append(target_new)
         
         #----------------------------------Grafting--------------------------------------#
         graft_args = {        
@@ -147,10 +149,8 @@ def run_experiment(args):
     
         graft.run()
         lora_configs = graft.generate_lora_configs(args)
-        print("REACH 1")
         if len(lora_configs) == 0:
             warnings.warn("No LoRA configs generated")
-            
         print(lora_configs)
         
         
@@ -161,13 +161,6 @@ def run_experiment(args):
                 name=f"{prompt.format(subject)} + {target} -> {target_new}",
                 config=vars(args),
             )
-            lora_layers = [(l.layer, l.adapt_mlp) for l in lora_configs]
-            lora_mlp_layers = [int(l[0]) for l in lora_layers if l[1]]
-            lora_attn_layers = [int(l[0]) for l in lora_layers if not l[1]]
-            wandb.log({
-                "LoRA MLP Layers": lora_mlp_layers,
-                "LoRA Attention Layers": lora_attn_layers,
-            })
             
         #---------------------------------Setup Model------------------------------------#
         if args.model_name == "gpt2-small":
@@ -189,7 +182,7 @@ def run_experiment(args):
         tokenizer = GPT2Tokenizer.from_pretrained(hf_model_name)
         state_dict = model.state_dict()
         lm_net.load_weight(state_dict)  
-        print("REACH 2")
+        
         #-----------------------------Setup Traininable Parameters---------------------------------#
         if "lora" in args.task: 
             lora.mark_only_lora_as_trainable(lm_net)
@@ -211,31 +204,68 @@ def run_experiment(args):
             work_dir = os.getenv('PT_OUTPUT_DIR', 'gpt2_model')
             args.logging = create_exp_dir(work_dir)
 
-        dataset = create_lm_dataset(training_prompts, tokenizer, args)
-        neighbourhood_dataset = create_testing_dataset(neighborhood_prompts, tokenizer, args)
-        same_attribute_dataset = create_testing_dataset(same_attribute_prompts, tokenizer, args)
+        dataset = create_lm_dataset(
+            prompts=training_prompts, target=target_new,
+            subject=subject, tokenizer=tokenizer, args=args
+        )
+        dataset_ref = create_lm_dataset(
+            prompts=training_prompts, target=target,
+            subject=subject, tokenizer=tokenizer, args=args
+        )
+        neighbourhood_dataset = create_lm_dataset(
+            prompts=neighborhood_prompts, target=target,
+            subject=subject, tokenizer=tokenizer, args=args
+        )
+        neighbourhood_dataset_ref = create_lm_dataset(
+            prompts=neighborhood_prompts, target=target_new,
+            subject=subject, tokenizer=tokenizer, args=args
+        )
+        same_attribute_dataset = create_lm_dataset(
+            prompts=same_attribute_prompts, target=target_new,
+            subject=subject, tokenizer=tokenizer, args=args
+        )
+        same_attribute_dataset_ref = create_lm_dataset(
+            prompts=same_attribute_prompts, target=target, 
+            subject=subject, tokenizer=tokenizer, args=args
+        )
+        reference_same_attribute_dataset = create_lm_dataset(
+            prompts=reference_same_attribute_prompts, target=target_new, 
+            subject=subject, tokenizer=tokenizer, args=args
+        )
+        dataset_indices = list(range(len(dataset)))
+        training_indices, valid_indices = train_test_split(
+            dataset_indices, test_size=args.test_size, random_state=args.random_seed
+        )
+        training_prompts = [d for i,d in enumerate(dataset) if i in training_indices]
+        valid_prompts = [d for i,d in enumerate(dataset) if i in valid_indices]
+        training_prompts_ref = [d for i,d in enumerate(dataset_ref) if i in training_indices]
+        valid_prompts_ref = [d for i,d in enumerate(dataset_ref) if i in valid_indices]
         
-        training_prompts, valid_prompts = train_test_split(dataset, test_size=args.test_size, random_state=args.random_seed)
+        
         train_data = FT_Dataset(
             samples=training_prompts,
+            ref_samples=training_prompts_ref,
             batch_size=args.train_batch_size,
             max_seq_length=args.seq_len, 
             joint_lm=args.obj=='jlm'
-        )     
+        ) 
         valid_data = FT_Dataset(
             samples=valid_prompts,
+            ref_samples=valid_prompts_ref,
             batch_size=args.train_batch_size,
             max_seq_length=args.seq_len, 
             joint_lm=args.obj=='jlm'
         )     
         neighbourhood_data = FT_Dataset(
             samples=neighbourhood_dataset,
+            ref_samples=neighbourhood_dataset_ref,
             batch_size=args.train_batch_size,
             max_seq_length=args.seq_len, 
-            joint_lm=args.obj=='jlm'
+            joint_lm=args.obj=='jlm',
         )
         same_attribute_data = FT_Dataset(
             samples=same_attribute_dataset,
+            ref_samples=same_attribute_dataset_ref,
             batch_size=args.train_batch_size,
             max_seq_length=args.seq_len, 
             joint_lm=args.obj=='jlm'
@@ -267,7 +297,19 @@ def run_experiment(args):
             lm_net = lm_net.cuda()
 
         optimizer = create_adam_optimizer_from_args(lm_net, args)
+        
+        print("eval")
+        test_evaluation = evaluate(lm_net,valid_loader,args,tokenizer,)
+        test_evaluation = {f"testing_{k}": v for k, v in test_evaluation.items()}
+        #evaluating specificity
+        neighbourhood_evaluation = evaluate(lm_net,neighbourhood_loader,args,tokenizer)
+        neighbourhood_evaluation = {f"neighbourhood_{k}": v for k, v in neighbourhood_evaluation.items()}
 
+        same_attribute_evaluation = evaluate(lm_net,same_attribute_loader,args,tokenizer)
+        same_attribute_evaluation = {f"same_attribute_{k}": v for k, v in same_attribute_evaluation.items()}
+        
+        init_evaluation = {**test_evaluation, **neighbourhood_evaluation, **same_attribute_evaluation}
+        
         if args.max_step is None:
             args.max_step = (args.max_epoch * train_data.num_batches) 
             print('set max_step:', args.max_step)
@@ -295,42 +337,30 @@ def run_experiment(args):
                 print('Exiting from training early')
             early_exit = True
 
-
-        testing_loss, testing_ppl, testing_t1, testing_acc = evaluate(lm_net,
-                                                                        valid_loader,
-                                                                        args)
+        print("eval")
+        test_evaluation = evaluate(lm_net,valid_loader,args,tokenizer,)
+        test_evaluation = {f"testing_{k}": v for k, v in test_evaluation.items()}
         #evaluating specificity
-        neighbourhood_loss, neighbourhood_ppl, neighbourhood_t1, neighbourhood_acc  = evaluate(lm_net,
-                                                                                               neighbourhood_loader,
-                                                                                               args)
+        neighbourhood_evaluation = evaluate(lm_net,neighbourhood_loader,args,tokenizer)
+        neighbourhood_evaluation = {f"neighbourhood_{k}": v for k, v in neighbourhood_evaluation.items()}
 
-        same_attribute_loss, same_attribute_ppl, same_attribute_t1, same_attribute_acc = evaluate(lm_net,
-                                                                                                  same_attribute_loader,
-                                                                                                  args)
-        # note: ppl: Perplexity(W) = exp(-sum(log(P(w_i))))
-        test_metrics["testing_loss"].update(testing_loss)
-        test_metrics["testing_ppl"].update(testing_ppl)
-        test_metrics["testing_t1"].update(testing_t1)
-        test_metrics["testing_acc"].update(testing_acc)
-        test_metrics["neighbourhood_loss"].update(neighbourhood_loss)
-        test_metrics["neighbourhood_ppl"].update(neighbourhood_ppl)
-        test_metrics["neighbourhood_t1"].update(neighbourhood_t1)
-        test_metrics["neighbourhood_acc"].update(neighbourhood_acc)
-        test_metrics["same_attribute_loss"].update(same_attribute_loss)
-        test_metrics["same_attribute_ppl"].update(same_attribute_ppl)
-        test_metrics["same_attribute_t1"].update(same_attribute_t1)
-        test_metrics["same_attribute_acc"].update(same_attribute_acc)
+        same_attribute_evaluation = evaluate(lm_net,same_attribute_loader,args,tokenizer)
+        same_attribute_evaluation = {f"same_attribute_{k}": v for k, v in same_attribute_evaluation.items()}
         
-        if args.do_wandb:
-            wandb.log({k: v.val for k, v in test_metrics.items()})
+        total_evaluation = {**test_evaluation, **neighbourhood_evaluation, **same_attribute_evaluation}
             
+        all_evaluations.append(total_evaluation)
+        all_init_evaluations.append(init_evaluation)
         if args.do_wandb: 
             run.finish()
             
         if early_exit: 
             break
         
-    log_experiment(args, test_metrics)
+        if batch_idx==10: 
+            break
+    
+    log_experiment(all_prompts, all_target, all_target_new, all_evaluations, all_init_evaluations, args)
     
 
 

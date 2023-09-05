@@ -19,9 +19,9 @@
     "random_seed": 1,
     "model_name": "gpt2-small",
     "use_hf_model": true,
-    "ablation_method": "resample",
+    "ablation_method": "resample_uniform",
     "use_mle_token_graft": true,
-    "graft_type": "causal_total_effect_window",
+    "graft_type": "decomposition",
     "noise_samples": 10,
     "graft_threshold": 0.75,
     "temperature": 0.85,
@@ -57,5 +57,5 @@
     "rank": 0,
     "save_model": false,
     "device": "cpu",
-    "logging": "functools.partial(<function logging at 0x7fc5f61af0a0>, log_path='gpt2_model/log.txt')"
+    "logging": "functools.partial(<function logging at 0x7f9ce1c6b5b0>, log_path='gpt2_model/log.txt')"
 }
