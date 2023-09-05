@@ -1063,6 +1063,7 @@ def convert_gpt2_weights(gpt2, cfg: HookedTransformerConfig, lora_case=False):
     state_dict["pos_embed.W_pos"] = gpt2.transformer.wpe.weight
 
     for l in range(cfg.n_layers):
+        gpt2.transformer.h[l].ln_1.weight
         state_dict[f"blocks.{l}.ln1.w"] = gpt2.transformer.h[l].ln_1.weight
         state_dict[f"blocks.{l}.ln1.b"] = gpt2.transformer.h[l].ln_1.bias
 
@@ -1101,11 +1102,12 @@ def convert_gpt2_weights(gpt2, cfg: HookedTransformerConfig, lora_case=False):
         W_in = gpt2.transformer.h[l].mlp.c_fc.weight
         W_out = gpt2.transformer.h[l].mlp.c_proj.weight
         
-        if lora_case: 
-            state_dict[f"blocks.{l}.mlp.W_in"] = W_in.T 
-            state_dict[f"blocks.{l}.mlp.b_in"] = gpt2.transformer.h[l].mlp.c_proj.bias
-            state_dict[f"blocks.{l}.mlp.W_out"] = W_out.T            
-            state_dict[f"blocks.{l}.mlp.b_out"] = gpt2.transformer.h[l].mlp.c_fc.bias
+        if lora_case:
+            
+            state_dict[f"blocks.{l}.mlp.W_in"] = W_in
+            state_dict[f"blocks.{l}.mlp.b_in"] = gpt2.transformer.h[l].mlp.c_fc.bias
+            state_dict[f"blocks.{l}.mlp.W_out"] = W_out            
+            state_dict[f"blocks.{l}.mlp.b_out"] = gpt2.transformer.h[l].mlp.c_proj.bias
 
         else: 
             state_dict[f"blocks.{l}.mlp.W_in"] = W_in

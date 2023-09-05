@@ -16,7 +16,7 @@ window_size: 5
 window_stride: 1
 
 #logging_args
-do_wandb: true                                                #whether to log to wandb  
+do_wandb: false                                                #whether to log to wandb  
 
 log_interval: 10                              
                 #log interval

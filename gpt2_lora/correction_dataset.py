@@ -38,8 +38,42 @@ def create_lm_dataset(prompts, target, subject, tokenizer, args):
             "predict_target" : predict_target,
             "str_label" : predict_str
         })
-    return dataset      
+    return dataset   
 
+
+
+class LoraCompensationDataset(Dataset):
+    def __init__(self, dataset_path, training=True, test_size=0.1): 
+        self.test_size = test_size
+        with open(dataset_path, "r") as json_file:
+            loaded_data = json.load(json_file)
+            
+        training_prompts = [] ; test_prompts = []
+        for samples in loaded_data: 
+            samples = samples["training_prompts"]
+            test_samples = samples[:int(len(samples) * test_size)]
+            training_samples = samples[int(len(samples) * test_size):]
+            
+            training_prompts += training_samples
+            test_prompts += test_samples
+    
+        self.training = training
+        self.training_prompts = training_prompts
+        self.test_prompts = test_prompts
+    
+    def __len__(self):
+        if self.training: 
+            return len(self.training_prompts)
+        else: 
+            return len(self.test_prompts)
+    
+    def __getitem__(self, idx):
+        if self.training: 
+            return self.training_prompts[idx]
+        else: 
+            return self.test_prompts[idx]
+        
+        
 
 class CorrectionDataset(Dataset):
     def __init__(self, 

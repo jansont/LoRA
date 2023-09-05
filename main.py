@@ -26,7 +26,7 @@ from gpt2_lora.exp_utils import create_exp_dir
 from gpt2_lora.training.evaluate import evaluate
 from gpt2_lora.utils import set_all_trainable, set_trainable_from_graft, AverageMeter, log_experiment
 from sklearn.model_selection import train_test_split
-
+from timeout_decorator import timeout, TimeoutError
 
 # influence model, calculate the influence score between two samples.
 def print_args(args):
@@ -114,14 +114,24 @@ def run_experiment(args):
         print(training_prompts)
         print(reference_evaluation_prompts)
         
-        if args.ablation_method == "resample_uniform": 
-            original_fact, corrupted_facts, _ = ablations.resample_ablation_uniform(hooked_model, prompt,subject,target,
-                                                                       n_noise_samples=args.noise_samples)
-        elif args.ablation_method=="resample":
-            original_fact, corrupted_facts, _ = ablations.resample_ablation(hooked_model, prompt, subject, target, n_noise_samples=args.noise_samples, temperature=args.temperature)
-        elif args.ablation_method=="noise": 
-            original_fact, corrupted_facts, _ = ablations.noise_ablation(hooked_model, prompt,subject,target,
-                                                                    n_noise_samples=args.noise_samples)
+        @timeout(30)
+        def timeout_resample(ablation_method):
+            if ablation_method == "resample_uniform": 
+                original_fact, corrupted_facts, _ = ablations.resample_ablation_uniform(hooked_model, prompt,subject,target,                                                             n_noise_samples=args.noise_samples)
+            elif ablation_method=="resample":
+                original_fact, corrupted_facts, _ = ablations.resample_ablation(hooked_model, prompt, subject, target, n_noise_samples=args.noise_samples, temperature=args.temperature)
+            elif ablation_method=="noise": 
+                original_fact, corrupted_facts, _ = ablations.noise_ablation(hooked_model, prompt,subject,target,n_noise_samples=args.noise_samples)
+            else: 
+                raise ValueError("ablation_method not recognized")
+            return original_fact, corrupted_facts
+        
+        try:
+            original_fact, corrupted_facts = timeout_resample(args.ablation_method)
+        except TimeoutError:
+            warnings.warn(f"Resample timed out for prompt {prompt}")
+            continue
+            
             
         all_prompts.append(original_fact) ; all_target.append(target) ; all_target_new.append(target_new)
         
@@ -367,8 +377,9 @@ def run_experiment(args):
 if __name__ == '__main__':
     
     args = parse_args()
+    key="7b93b93f91b9088eb5e2a52295c51c5d6d9fd2e3"
     if args.do_wandb: 
-        wandb.login()
+        wandb.login(key=key)
         
     random.seed(args.random_seed)
     torch.manual_seed(args.random_seed)   

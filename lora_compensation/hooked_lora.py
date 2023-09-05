@@ -69,7 +69,7 @@ if __name__ == '__main__':
         #         lora_alpha=args.lora_alpha,
         #         lora_dropout=args.lora_dropout)
         ]
-        
+    
     if args.model_name == "gpt2-small":
         hf_model_name = "gpt2"
         n_layer = 12
@@ -80,7 +80,7 @@ if __name__ == '__main__':
         hf_model_name = args.model_name
         n_layer = 35
         config = GPT2Config(
-            n_embd=5120, n_layer=n_layer, n_head=20, 
+            n_embd=1280, n_layer=n_layer, n_head=20, 
         )
     else: 
         raise ValueError("model_name not recognized")
