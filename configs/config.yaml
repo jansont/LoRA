@@ -4,7 +4,7 @@ fact_data: datasets/chatgpt_fact_dataset_100.json            #path to fact data
 task: lora_graft_finetune                                     #task to run: Options: ['lora_graft_finetune', 'lora_mlp_finetune',
                                                               #'lora_attn_finetune', lora_all_finetune', 'finetune', 'graft_finetune' ]
 random_seed: 1                                                #random seed for reproducibility
-model_name: gpt2-large                                      #huggingface model name
+model_name: gpt2-small                                      #huggingface model name
 use_hf_model: true                                            #whether to load huggingface weights.
 ablation_method: "resample_uniform"                                   #Use resample ablation. Else use noise ablation.
 use_mle_token_graft: false                                     #Use MLE token graft. Else use target token graft.
