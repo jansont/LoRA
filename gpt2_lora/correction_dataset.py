@@ -27,6 +27,10 @@ def create_lm_dataset(prompts, target, subject, tokenizer, args):
             completion = tokenized_prompt[-split_size:]
             target_completion = completion
             
+        if type(context)==list: 
+            if len(context) == 0: 
+                continue
+            
         tokenized_context = tokenizer.encode(context, add_special_tokens=False)
         tokenized_full_completion = tokenizer.encode(completion, add_special_tokens=False)
         tokenized_target_completion = tokenizer.encode(target_completion, add_special_tokens=False)
