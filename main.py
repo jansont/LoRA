@@ -185,6 +185,8 @@ def run_experiment(args):
             )
         else: 
             raise ValueError("model_name not recognized")
+        print(config)
+        
         print("..initializing model")
         lm_net = GPT2LMModel(config, lora_configs)
         print("a")
