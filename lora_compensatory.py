@@ -153,6 +153,7 @@ def run_experiment(args):
     #start by getting the base results
     correction_dataloader = DataLoader(correction_dataset, batch_size=1)
     initial_results = []
+    print("..getting initial results")
     for batch_idx, batch in enumerate(correction_dataloader):
         #----------------------------Prepare Correction Dataset-----------------------------#
         prompt = batch["prompt"][0]
@@ -173,12 +174,14 @@ def run_experiment(args):
                 raise ValueError("ablation_method not recognized")
             return original_fact, corrupted_facts
         
+        
         try:
             original_fact, corrupted_facts = timeout_resample(args.ablation_method)
         except TimeoutError:
             warnings.warn(f"Resample timed out for prompt {prompt}")
             continue
 
+        
         res = get_residuals_and_logits(model, 
                                 args.device,
                                 clean_prompt=original_fact,
@@ -187,7 +190,7 @@ def run_experiment(args):
                                 target_new=target_new, 
                                 ablate_with_corrupted=True)
         initial_results.append(res)
-        save_pickle(initial_results, f"lora_compensation/results/{args.experiment_name}_initial_results.pkl")
+    save_pickle(initial_results, f"lora_compensation/results/{args.experiment_name}_initial_results.pkl")
             
 
     for layer in range(n_layer):
@@ -304,7 +307,7 @@ def run_experiment(args):
         
 
     correction_dataloader = DataLoader(correction_dataset, batch_size=1)
-    initial_results = []
+    results = []
     for batch_idx, batch in enumerate(correction_dataloader):
         #----------------------------Prepare Correction Dataset-----------------------------#
         prompt = batch["prompt"][0]
@@ -338,9 +341,9 @@ def run_experiment(args):
                                 target=target, 
                                 target_new=target_new, 
                                 ablate_with_corrupted=True)
-        initial_results.append(res)
+        results.append(res)
         module = "attn" if adapt_attention else "mlp"
-        save_pickle(initial_results, f"lora_compensation/results/{args.experiment_name}_layer_{layer}_{module}_results.pkl")
+    save_pickle(results, f"lora_compensation/results/{args.experiment_name}_layer_{layer}_{module}_results.pkl")
             
         
         
