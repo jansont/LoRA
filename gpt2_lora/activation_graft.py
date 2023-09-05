@@ -103,8 +103,10 @@ class Graft(ABC):
         for block in range(n_blocks):
             attn_layer_name = layer_names[block*2]
             assert "attn" in attn_layer_name
+            
             mlp_layer_name = layer_names[block*2+1]
             assert "mlp" in mlp_layer_name
+            
             attn_graft_val = graft[block*2]
             mlp_graft_val = graft[block*2+1]
             

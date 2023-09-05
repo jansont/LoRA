@@ -35,9 +35,9 @@ class LORAConfig(object):
     ): 
         if layer_type not in ['attn', 'mlp']:
             raise ValueError("layer_type should be 'attn' or 'mlp'")
-        if layer_type=="attn" and adapt_mlp_c_fc or adapt_mlp_c_proj:
+        if layer_type=="attn" and (adapt_mlp_c_fc or adapt_mlp_c_proj):
             raise ValueError("layer_type is 'attn', but mlp layer is adapted")
-        if layer_type=="mlp" and adapt_mlp_c_fc or adapt_mlp_c_proj:
+        if layer_type=="mlp" and (adapt_attn_c_attn or adapt_attn_c_proj):
             raise ValueError("layer_type is 'mlp', but attn layer is adapted")
         if layer_type=="attn" and not adapt_attn_c_attn and not adapt_attn_c_proj:
             lora_dim = 0

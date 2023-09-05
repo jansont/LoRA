@@ -129,7 +129,7 @@ def run_experiment(args):
     )
     elif args.model_name == "gpt2-large":
             hf_model_name = args.model_name
-            n_layer = 35
+            n_layer = 36
             config = GPT2Config(
                 n_embd=1280, n_layer=n_layer, n_head=20, 
     )

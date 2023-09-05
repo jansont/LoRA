@@ -111,8 +111,6 @@ def run_experiment(args):
         print(prompt)
         print(subject)
         print(target, target_new)
-        print(training_prompts)
-        print(reference_evaluation_prompts)
         
         @timeout(30)
         def timeout_resample(ablation_method):
