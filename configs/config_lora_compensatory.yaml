@@ -40,7 +40,23 @@ grad_acc: 1                                                   #gradient accumula
 seq_len: 32                                                   #number of tokens to predict.
 max_epoch: 5                                                 #number of epochs to train
 #model_card: gpt2.md                                          #choices=['gpt2.sm', 'gpt2.md', 'gpt2.lg'], 
-                
+
+lr : 0.0001
+weight_decay: 0.01
+correct_bias: true
+adam_epislon: 1e-6
+no_decay_bias: true
+adam_beta1: 0.9
+adam_beta2: 0.98
+scheduler: 'linear'
+max_step: null
+warmup_step: 0
+i_steps: '0'
+i_lrs: '0.00025'
+ 
+ 
+ 
+ 
 init_checkpoint: null                                         #pretrained checkpoint path')
 fp16: false                                                   #train model with fp16')
                 

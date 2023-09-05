@@ -30,6 +30,10 @@ def add_optimizer_params_namespace(args: types.SimpleNamespace):
     args.i_lrs = '0.00025'
     return args
 
+
+
+
+
 def add_optimizer_params(parser: argparse.ArgumentParser):
     parser.add_argument('--lr', default=0.0001, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=0.01, type=float, help='weight decay rate')
@@ -63,6 +67,12 @@ class AdamW(Optimizer):
         correct_bias (bool): can be set to False to avoid correcting bias in Adam (e.g. like in Bert TF repository). Default True.
     """
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.0, correct_bias=True):
+        betas = ((float(betas[0])),float(betas[1]))
+        lr = float(lr)
+        eps = float(eps)
+        weight_decay = float(weight_decay)
+        correct_bias = bool(correct_bias)
+        
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {} - should be >= 0.0".format(lr))
         if not 0.0 <= betas[0] < 1.0:
@@ -75,7 +85,7 @@ class AdamW(Optimizer):
         super().__init__(params, defaults)
 
 
-    def reset_state(self):
+    def reset_state(self, param_groups):
         for group in param_groups:
             for p in group['params']:
                 state = self.state[p]

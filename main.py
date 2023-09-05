@@ -107,7 +107,7 @@ def run_experiment(args):
         reference_neighborhood_prompts = [p[0] for p in batch["reference_neighborhood_prompts"]]
         same_attribute_prompts = [p[0] for p in batch["same_attribute_prompts"]]
         reference_same_attribute_prompts = [p[0] for p in batch["reference_same_attribute_prompts"]]
-
+        
         print(prompt)
         print(subject)
         print(target, target_new)
@@ -198,6 +198,10 @@ def run_experiment(args):
         print("d")
         lm_net.load_weight(state_dict)  
         
+        del lm_net
+        del model
+        continue
+        
         #-----------------------------Setup Traininable Parameters---------------------------------#
         print("setting trainable parameters")
         if "lora" in args.task: 
@@ -216,26 +220,30 @@ def run_experiment(args):
             except Exception as e:
                 warnings.warn('Could not import amp, apex may not be installed')
         
+        
         if args.rank == 0:
             work_dir = os.getenv('PT_OUTPUT_DIR', 'gpt2_model')
             args.logging = create_exp_dir(work_dir)
-
+        
+        
         dataset = create_lm_dataset(
             prompts=training_prompts, target=target_new,
             subject=subject, tokenizer=tokenizer, args=args
         )
         dataset_ref = create_lm_dataset(
-            prompts=training_prompts, target=target,
+            prompts=reference_evaluation_prompts, target=target,
             subject=subject, tokenizer=tokenizer, args=args
         )
+        
         neighbourhood_dataset = create_lm_dataset(
             prompts=neighborhood_prompts, target=target,
             subject=subject, tokenizer=tokenizer, args=args
         )
         neighbourhood_dataset_ref = create_lm_dataset(
-            prompts=neighborhood_prompts, target=target_new,
+            prompts=reference_neighborhood_prompts, target=target_new,
             subject=subject, tokenizer=tokenizer, args=args
         )
+        
         same_attribute_dataset = create_lm_dataset(
             prompts=same_attribute_prompts, target=target_new,
             subject=subject, tokenizer=tokenizer, args=args
