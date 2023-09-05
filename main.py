@@ -373,6 +373,14 @@ def run_experiment(args):
         
         if batch_idx==100: 
             break
+        
+        del lm_net
+        del optimizer
+        del scheduler
+        del model
+        del tokenizer
+        del state_dict
+        
     
     log_experiment(all_prompts, all_target, all_target_new, all_evaluations, all_init_evaluations, args)
     
