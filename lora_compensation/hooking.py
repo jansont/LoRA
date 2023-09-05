@@ -118,6 +118,7 @@ def get_residuals_and_logits(
         new_target_token = model.to_single_token(target_new)
     except:
         new_target_token = model.to_tokens(target_new)[:,1]
+        
     
     if ablate_with_corrupted:
         ablate_tokens = corrupted_tokens
@@ -132,11 +133,12 @@ def get_residuals_and_logits(
     # reference_logits = reference_logits.to("cpu")
     # ablate_logits = ablate_logits.to("cpu")
     
-    mle_token = get_mle_logit(model, clean_tokens)        
+    mle_token = torch.argmax(reference_logits[:,-1,:], dim=-1)
     target_token = torch.ones_like(mle_token).long().to(device) * target_token
     target_token = target_token.unsqueeze(dim=-1)
     new_target_token = torch.ones_like(mle_token).long().to(device) * new_target_token
     new_target_token = new_target_token.unsqueeze(dim=-1)
+    del mle_token
 
     # mle_token = mle_token.to("cpu")
     # target_token = target_token.to("cpu")
