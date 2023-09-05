@@ -40,29 +40,13 @@ def get_residual(model, cache, new_target_token_idx, target_token_idx, decompose
     mle_residual_logits = mle_residual_logits.mean(dim=-1)
     target_residual_logits = target_residual_logits.mean(dim=-1)
     
+    
     if return_labels: 
         return layer_names, mle_residual_logits.to("cpu"), target_residual_logits.to("cpu")
     else:
         return mle_residual_logits.to("cpu"), target_residual_logits.to("cpu")
     
-    
-def get_logit_attributions(cache, new_target_token_idx, target_token_idx, return_labels=False): 
-    retval = cache.decompose_resid(layer=-1, mode="all", return_labels=return_labels)
-    if return_labels: 
-        residual_stack, layer_names = retval
-    else:
-        residual_stack = retval
-            
-    #shape: layer, prompt, pos
-    mle_logit_attributions = cache.logit_attrs(residual_stack, new_target_token_idx)
-    target_logit_attributions = cache.logit_attrs(residual_stack, target_token_idx)
-    
-    mle_logit_attributions = mle_logit_attributions[:,:,-1].mean(dim=-1)
-    target_logit_attributions = target_logit_attributions[:,:,-1].mean(dim=-1)
-    if return_labels: 
-        return layer_names, mle_logit_attributions.to("cpu"), target_logit_attributions.to("cpu")
-    else: 
-        return mle_logit_attributions.to("cpu"), target_logit_attributions.to("cpu")
+
 
 def patch_layer(corrupted_residual_component,hook,cache):
     corrupted_residual_component[:, :, :] = cache[hook.name][:, :, :]
@@ -85,14 +69,8 @@ def extract_logit(logits, new_target_token_idx, target_token_idx):
     target_logit = (logits.gather(dim=-1, index=target_token_idx) - logits.mean(dim=-1, keepdim=True))
     mle_logit = mle_logit.mean(dim=0)
     target_logit = target_logit.mean(dim=0)
-    return mle_logit, target_logit
+    return mle_logit.to("cpu"), target_logit.to("cpu")
 
-
-def get_mle_logit(model, tokens): 
-    reference_logits, reference_cache = model.run_with_cache(tokens, return_type="logits")
-    reference_logits = reference_logits
-    mle_token = torch.argmax(reference_logits[:,-1,:], dim=-1)
-    return mle_token.to("cpu")
 
 def get_residuals_and_logits(
         model, 
@@ -102,6 +80,8 @@ def get_residuals_and_logits(
         target: str, 
         target_new: str, 
         ablate_with_corrupted=True):
+    torch.cuda.empty_cache()
+
     #-----------------------------prepare inputs--------------------------------------
     clean_tokens = model.to_tokens(clean_prompt, prepend_bos=True) 
     corrupted_tokens = model.to_tokens(corrupted_prompts, prepend_bos=True)
@@ -151,7 +131,8 @@ def get_residuals_and_logits(
     #---------------------------calculating base results---------------------------------------
     layer_names, ref_decomposed_residual_new, ref_decomposed_residual_target = get_residual(model, reference_cache, new_target_token, target_token, decomposed=True, return_labels=True)
     ablate_decomposed_residual_new, ablate_decomposed_residual_target = get_residual(model, ablate_cache, new_target_token, target_token, decomposed=True)
-                    
+    
+    torch.cuda.empty_cache()          
     return {
     "layer_names" : layer_names,   
     
