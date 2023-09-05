@@ -11,7 +11,7 @@ def unembedding_function(model, residual_stack, cache) -> float:
     return z
 
 
-def get_residual(cache, new_target_token_idx, target_token_idx, decomposed=True, return_labels=False): 
+def get_residual(model, cache, new_target_token_idx, target_token_idx, decomposed=True, return_labels=False): 
     if decomposed: 
         retval = cache.decompose_resid(layer=-1, mode="all", return_labels=return_labels)
     else: 
@@ -21,7 +21,7 @@ def get_residual(cache, new_target_token_idx, target_token_idx, decomposed=True,
     else:
         residual = retval
     
-    residual = unembedding_function(residual, cache)
+    residual = unembedding_function(model, residual, cache)
     #shape: torch.Size([layer, batch, pos, vocab])
     residual = residual.permute(0,2,1,3)
     
@@ -108,9 +108,16 @@ def get_residuals_and_logits(
     assert clean_tokens.shape[-1] == corrupted_tokens.shape[-1]
 
     clean_tokens = clean_tokens.expand(corrupted_tokens.shape[0], -1)
-    target_token = model.to_single_token(target)
     
-    new_target_token = model.to_single_token(target_new)
+    try:
+        target_token = model.to_single_token(target)
+    except: 
+        target_token = model.to_tokens(target)[:,1]
+
+    try: 
+        new_target_token = model.to_single_token(target_new)
+    except:
+        new_target_token = model.to_tokens(target_new)[:,1]
     
     if ablate_with_corrupted:
         ablate_tokens = corrupted_tokens
@@ -125,7 +132,7 @@ def get_residuals_and_logits(
     # reference_logits = reference_logits.to("cpu")
     # ablate_logits = ablate_logits.to("cpu")
     
-    mle_token = get_mle_logit(clean_tokens)        
+    mle_token = get_mle_logit(model, clean_tokens)        
     target_token = torch.ones_like(mle_token).long().to(device) * target_token
     target_token = target_token.unsqueeze(dim=-1)
     new_target_token = torch.ones_like(mle_token).long().to(device) * new_target_token
@@ -140,8 +147,8 @@ def get_residuals_and_logits(
     reference_new_logit, reference_target_logit = extract_logit(reference_logits, new_target_token, target_token)
     ablate_new_logit, ablate_target_logit = extract_logit(ablate_logits, new_target_token, target_token)
     #---------------------------calculating base results---------------------------------------
-    layer_names, ref_decomposed_residual_new, ref_decomposed_residual_target = get_residual(reference_cache, new_target_token, target_token, decomposed=True, return_labels=True)
-    ablate_decomposed_residual_new, ablate_decomposed_residual_target = get_residual(ablate_cache, new_target_token, target_token, decomposed=True)
+    layer_names, ref_decomposed_residual_new, ref_decomposed_residual_target = get_residual(model, reference_cache, new_target_token, target_token, decomposed=True, return_labels=True)
+    ablate_decomposed_residual_new, ablate_decomposed_residual_target = get_residual(model, ablate_cache, new_target_token, target_token, decomposed=True)
                     
     return {
     "layer_names" : layer_names,   

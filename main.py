@@ -187,9 +187,13 @@ def run_experiment(args):
             raise ValueError("model_name not recognized")
         print("..initializing model")
         lm_net = GPT2LMModel(config, lora_configs)
+        print("a")
         model = GPT2LMHeadModel.from_pretrained(hf_model_name)
+        print("b")
         tokenizer = GPT2Tokenizer.from_pretrained(hf_model_name)
+        print("c")
         state_dict = model.state_dict()
+        print("d")
         lm_net.load_weight(state_dict)  
         
         #-----------------------------Setup Traininable Parameters---------------------------------#
@@ -334,8 +338,6 @@ def run_experiment(args):
                     lm_net, optimizer, scheduler, train_loader, valid_loader, args, 
                     train_step=train_step, epoch=epoch
                 )
-                print("REACH 5")
-                
                 if train_step >= args.max_step or (args.max_epoch is not None and epoch >= args.max_epoch):
                     if args.rank == 0:
                         print('-' * 100)

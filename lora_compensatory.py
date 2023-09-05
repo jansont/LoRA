@@ -66,7 +66,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='PyTorch GPT2 with LORA from Activation Grafting')
     
     # Add a new argument for the config file
-    parser.add_argument('--config', default="configs/config.yaml", type=str, help='Path to the YAML config file')
+    parser.add_argument('--config', default="configs/config_lora_compensatory.yaml", type=str, help='Path to the YAML config file')
     add_optimizer_params(parser)
     
     args = parser.parse_args()
