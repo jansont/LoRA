@@ -8,7 +8,7 @@
     "adam_beta1": 0.9,
     "adam_beta2": 0.98,
     "scheduler": "linear",
-    "max_step": 25,
+    "max_step": 80,
     "max_epoch": 5,
     "warmup_step": 0,
     "i_steps": "0",
@@ -17,7 +17,7 @@
     "fact_data": "datasets/chatgpt_fact_dataset_100.json",
     "task": "lora_graft_finetune",
     "random_seed": 1,
-    "model_name": "gpt2-large",
+    "model_name": "gpt2-small",
     "use_hf_model": true,
     "ablation_method": "resample_uniform",
     "use_mle_token_graft": false,
@@ -27,7 +27,7 @@
     "temperature": 0.85,
     "window_size": 5,
     "window_stride": 1,
-    "do_wandb": true,
+    "do_wandb": false,
     "log_interval": 10,
     "eval_interval": 10,
     "save_interval": 500,
@@ -44,6 +44,7 @@
     "valid_batch_size": 4,
     "grad_acc": 1,
     "seq_len": 32,
+    "use_kl_reg": true,
     "init_checkpoint": null,
     "fp16": false,
     "work_dir": null,
@@ -57,5 +58,5 @@
     "rank": 0,
     "save_model": false,
     "device": "cpu",
-    "logging": "functools.partial(<function logging at 0x7f88461a3640>, log_path='gpt2_model/log.txt')"
+    "logging": "functools.partial(<function logging at 0x7fc73d9f3010>, log_path='gpt2_model/log.txt')"
 }

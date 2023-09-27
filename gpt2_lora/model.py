@@ -449,13 +449,16 @@ class GPT2LMModel(nn.Module):
     def forward(
         self, 
         input_ids, 
+        args, 
         lm_labels=None, 
         lm_mask=None, 
         eval_mask=None,
         past=None, 
         len_past=None, 
         label_smooth=0.0,
-        is_report_accuracy=False
+        is_report_accuracy=False, 
+        init_logits=None, 
+        use_kl_reg=False, 
     ):
         _batch, _len = input_ids.shape
         hidden_states, presents = self.transformer(input_ids, past=past, len_past=len_past)
@@ -493,7 +496,7 @@ class GPT2LMModel(nn.Module):
                 #_all_acc = _all_acc * 1.0 / _batch
 
             if label_smooth > 0.0001:
-                logprobs = torch.nn.functional.log_softmax(lm_logits.view(-1, lm_logits.size(-1)), dim=-1)
+                logprobs = F.log_softmax(lm_logits.view(-1, lm_logits.size(-1)), dim=-1)
                 nll_loss = -logprobs.gather(dim=-1, index=lm_labels.view(-1).unsqueeze(1))
                 nll_loss = nll_loss.squeeze(1)
                 smooth_loss = -logprobs.mean(dim=-1)
@@ -505,10 +508,18 @@ class GPT2LMModel(nn.Module):
 
             if lm_mask is None:
                 lm_mask = torch.ones(loss.shape, dtype=loss.dtype, device=loss.device)
+                
             loss = loss * lm_mask 
 
             loss = loss.sum() / (lm_mask.sum() + 0.0001)
-
+            
+            if use_kl_reg: 
+                probs = F.softmax(lm_logits.view(-1, lm_logits.size(-1)), dim=-1)
+                ref_probs = F.softmax(init_logits.view(-1, init_logits.size(-1)), dim=-1)
+                kl_div = F.kl_div(ref_probs.log(), probs, reduction='batchmean')
+              
+                loss = loss + args.gamma*kl_div
+            
             if is_report_accuracy:
                 return lm_logits, loss, _t1_acc, _all_acc
             else:

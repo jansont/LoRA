@@ -8,7 +8,7 @@ model_name: gpt2-small                                      #huggingface model n
 use_hf_model: true                                            #whether to load huggingface weights.
 ablation_method: "resample_uniform"                                   #Use resample ablation. Else use noise ablation.
 use_mle_token_graft: false                                     #Use MLE token graft. Else use target token graft.
-graft_type: decomposition                        #Use causal graft. Else use decomposition graft.
+graft_type: "decomposition"                        #Use causal graft. Else use decomposition graft.
 noise_samples: 10                                             #Number of noise samples to generate for counterfactual.
 graft_threshold : 0.75 
 temperature: 0.85
@@ -39,6 +39,8 @@ valid_batch_size: 4                                           #validation batch 
 grad_acc: 1                                                   #gradient accumulation steps
 seq_len: 32                                                   #number of tokens to predict.
 max_epoch: 5                                                 #number of epochs to train
+use_kl_reg: true
+gamma : 0.1
 #model_card: gpt2.md                                          #choices=['gpt2.sm', 'gpt2.md', 'gpt2.lg'], 
                 
 init_checkpoint: null                                         #pretrained checkpoint path')

@@ -35,9 +35,11 @@ def train_validate(
     scheduler, 
     train_loader, 
     valid_loader, 
+    init_train_logits,
+    init_valid_logits,
     args, 
     train_step=0, 
-    epoch=0
+    epoch=0, 
 ):
     model.train()
     avg_lm_loss = AverageMeter()
@@ -57,9 +59,10 @@ def train_validate(
         _target = data['target'].to(args.device)
         _msk = data['mask'].to(args.device)
         _eval_msk = data['eval_mask'].to(args.device)
-
+        _init_logits = init_train_logits[idx].to(args.device)
         _lm_logits, _lm_loss = model(
             _input, lm_labels=_target, lm_mask=_msk, eval_mask=_eval_msk, label_smooth=args.label_smooth,
+            init_logits=_init_logits,use_kl_reg=args.use_kl_reg,args=args, 
         ) 
 
         _lm_loss = _lm_loss.mean() 
@@ -105,8 +108,7 @@ def train_validate(
         # evaluation interval
         if train_step % args.eval_interval == 0:
             eval_start_time = time.time()
-
-            evaluation = evaluate(model, valid_loader, args)
+            evaluation = evaluate(model=model, valid_loader=valid_loader, args=args, init_logits=init_valid_logits, use_kl_reg=args.use_kl_reg)
             
             valid_loss = evaluation["avg_lm_loss"]
             valid_ppl = evaluation["avg_lm_ppl"]
@@ -137,3 +139,28 @@ def train_validate(
         print('saving checkpoint', model_path)
         torch.save({'model_state_dict': model.state_dict()}, model_path) 
     return train_step
+
+
+def initial_logits(
+    model, 
+    loader, 
+    args,
+):
+
+    # train_loader.sampler.set_epoch(epoch)
+    logits = []
+    for idx, data in enumerate(loader):
+        data = {key: value for key, value in data.items()}
+        
+        data = data["normal"]
+
+        _input = data['input'].to(args.device)
+        _target = data['target'].to(args.device)
+        _msk = data['mask'].to(args.device)
+        _eval_msk = data['eval_mask'].to(args.device)
+
+        _lm_logits, _ = model(
+            _input, lm_labels=_target, lm_mask=_msk, eval_mask=_eval_msk, label_smooth=args.label_smooth,args=args
+        ) 
+        logits.append(_lm_logits)
+    return logits

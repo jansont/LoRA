@@ -449,3 +449,175 @@ def has_duplicates(tuple_list):
         seen_tuples.add(tuple_elem)
 
     return False
+
+def get_mlp_weights(model,num_layers, hidden_dim):
+  Ks = []
+  Vs = []
+  for j in range(num_layers):
+    K = model.get_parameter(f"blocks.{j}.mlp.W_in").T.detach()
+    V = model.get_parameter(f"blocks.{j}.mlp.W_out")
+    Ks.append(K)
+    Vs.append(V)
+  
+  Ks =  torch.cat(Ks)
+  Vs = torch.cat(Vs)
+  K_heads = Ks.reshape(num_layers, -1, hidden_dim)
+  V_heads = Vs.reshape(num_layers, -1, hidden_dim)
+  return K_heads, V_heads
+
+def get_attention_heads(model, num_layers, hidden_dim, num_heads, head_size):
+  Vs = []
+  for j in range(num_layers):
+    v = model.get_parameter(f"blocks.{j}.attn.W_V").detach().T
+    v = v - torch.mean(v, dim=0) 
+    Vs.append(v.T)
+
+  W_V = torch.cat(Vs)
+  W_O = torch.cat([model.get_parameter(f"blocks.{j}.attn.W_O") for j in range(num_layers)]).detach()
+  W_V_heads = W_V.reshape(num_layers, hidden_dim, num_heads, head_size).permute(0, 2, 1, 3)
+  W_O_heads = W_O.reshape(num_layers, num_heads, head_size, hidden_dim).permute(0, 1, 3, 2)
+  return W_V_heads, W_O_heads
+
+
+def cosine_sim(x,matrix):
+    dots = []
+    for i in range(matrix.shape[0]):
+        y = matrix[i,:] 
+        s = torch.dot(x,y) / (torch.norm(x) * torch.norm(y))
+        dots.append(s)
+    return torch.stack(dots)
+      
+def normalize_and_entropy(V, eps=1e-6):
+    absV = torch.abs(V)
+    normV = absV / torch.sum(absV)
+    entropy = torch.sum(normV * torch.log(normV + eps)).item()
+    return -entropy
+      
+class SVD_Graft(Graft): 
+    def __init__(self, 
+                 model: HookedTransformer,
+                 clean_prompt: str,
+                 corrupted_prompts: list[str],
+                 target: str, 
+                 device: str,
+                 use_mle_token_graft: bool = False, 
+                 num_layers = 12,
+                num_heads = 12,
+                head_size = 64,
+                hidden_dim = 768,
+                top_n_vect=10,
+                 graft_threshold=0.15):
+        super().__init__(model, clean_prompt, corrupted_prompts, target, device, use_mle_token_graft)
+        self.graft_threshold=graft_threshold
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+        self.head_size = head_size
+        self.hidden_dim = hidden_dim
+        self.top_n_vect = top_n_vect
+        
+    def run(self): 
+        #---------------------------calculating patch results---------------------------------------
+        svd_graft = torch.zeros(self.model.cfg.n_layers * 2, device="cpu", dtype=torch.float32)
+        
+        prompt = self.clean_prompt + " " + self.target
+        prompt_tokens = self.model.to_tokens(prompt, prepend_bos=True)
+        embedding = self.model.embed(prompt_tokens).squeeze()
+                    
+        K,V = get_mlp_weights(self.model, num_layers = self.num_layers, hidden_dim = self.hidden_dim)
+        W_V_heads, W_O_heads = get_attention_heads(self.model, num_layers=self.num_layers, hidden_dim=self.hidden_dim, num_heads=self.num_heads, head_size = self.head_size)
+
+        for layer_idx in range(self.num_layers): 
+            for head_idx in range(self.num_heads):
+                W_V_tmp, W_O_tmp = W_V_heads[layer_idx, head_idx, :], W_O_heads[layer_idx, head_idx]
+                OV = W_V_tmp @ W_O_tmp.T
+                U,S,V = torch.linalg.svd(OV)
+                V = V.squeeze()
+                S_attn = S[:self.top_n_vect]
+                Vs_attn = []
+                for i in range(self.top_n_vect):
+                    Sc = cosine_sim(V[i,:], embedding)
+                    Vs_attn.append(Sc)
+                            
+            W_matrix = K[layer_idx, :,:]
+            U,S,V = torch.linalg.svd(W_matrix,full_matrices=False)
+            S_mlp = S[:self.top_n_vect]
+            Vs_mlp = []
+            for i in range(self.top_n_vect):
+                Sc = cosine_sim(V[i,:], embedding)
+                Vs_mlp.append(Sc)
+                
+            Vs_attn = torch.stack(Vs_attn)
+            Vs_mlp = torch.stack(Vs_mlp)
+            
+            max_s_value_mlp = torch.max(S_mlp)
+            max_s_value_attn = torch.max(S_attn)
+            
+            Vs_attn = torch.abs(Vs_attn // max_s_value_attn) * Vs_attn
+            Vs_mlp = torch.abs(Vs_mlp // max_s_value_mlp) * Vs_mlp
+            Vs_attn = Vs_attn.mean(dim=-1).mean(dim=0)
+            Vs_mlp = Vs_mlp.mean(dim=-1).mean(dim=0)
+            
+            svd_graft[layer_idx] = Vs_attn > self.graft_threshold
+            svd_graft[layer_idx+1] = Vs_mlp > self.graft_threshold
+
+        self.graft = svd_graft
+        layer_names = []
+        for l in range(self.num_layers):
+            layer_names.append(f"{l}_attn_out")
+            layer_names.append(f"{l}_mlp_out")
+        self.layer_names = layer_names
+
+
+class CircuitGraft(Graft): 
+    def __init__(self, 
+                 model: HookedTransformer,
+                 clean_prompt: str,
+                 corrupted_prompts: list[str],
+                 target: str, 
+                 device: str,
+                 use_mle_token_graft: bool = False, 
+                 graft_threshold=0.75):
+        super().__init__(model, clean_prompt, corrupted_prompts, target, device, use_mle_token_graft)
+        self.graft_threshold=graft_threshold
+    
+    def run(self): 
+        inputs = self.prepare_inputs()
+        clean_cache = inputs["clean_cache"]
+        target_token = inputs["target_token"]      
+        corrupted_target_logit = inputs["corrupted_target_logit"]
+        corrupted_tokens = inputs["corrupted_tokens"] 
+        
+        #---------------------------calculating patch results---------------------------------------
+        patched_layer_names = []
+        hook_names = []
+        fwd_hooks = []
+        for layer in range(self.model.cfg.n_layers*2):
+            if layer % 2 == 0: 
+                p = "attn_out"
+            else: 
+                p = "mlp_out"
+            patched_layer_names.append(f"{layer//2}_{p}")
+            patch_name = f"blocks.{layer//2}.hook_{p}"
+            hook_fn = partial(patch_layer, cache=clean_cache)       
+            hook = (patch_name, hook_fn) 
+            with self.model.hooks(
+                fwd_hooks = fwd_hooks + [hook]
+            ) as hooked_model:
+                restored_logits, _ = hooked_model.run_with_cache(corrupted_tokens, return_type="logits")
+                restored_logits = restored_logits[:,-1,:]
+                
+                restored_target_logit = (restored_logits.gather(dim=-1, index=target_token) - restored_logits.mean(dim=-1, keepdim=True)).to("cpu")
+                restored_target_logit = restored_target_logit.mean(dim=0)
+                
+                total_effect = (restored_target_logit - corrupted_target_logit).squeeze()
+                if total_effect < self.graft_threshold: 
+                    fwd_hooks.append(hook)
+                
+                hook_names.append((p, layer//2, total_effect < self.graft_threshold))
+                    
+        graft = torch.zeros(self.model.cfg.n_layers * 2, device="cpu", dtype=torch.float32)
+        for p, layer, graft_val in hook_names:
+            graft[layer] = graft_val
+        
+        self.graft = graft
+        self.layer_names = patched_layer_names

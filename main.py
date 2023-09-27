@@ -13,7 +13,7 @@ from transformers import GPT2LMHeadModel, GPT2Tokenizer
 from transformer_lens import HookedTransformer
 from gpt2_lora.data_utils import FT_Dataset
 from gpt2_lora.model import GPT2LMModel, GPT2Config
-from gpt2_lora.training.train import train_validate
+from gpt2_lora.training.train import train_validate, initial_logits
 from gpt2_lora.correction_dataset import CorrectionDataset, create_lm_dataset
 import gpt2_lora.ablations as ablations
 import gpt2_lora.activation_graft as activation_grafts
@@ -51,7 +51,7 @@ def validate_args(args):
     if args.task=="lora_attn_finetune": 
         if sum([args.aadapt_attn_c_attn, args.adapt_attn_c_proj]) == 0: 
             raise ValueError("No LoRA Attention layers selected")
-    if args.graft_type not in ["decomposition", "causal_total_effect", "causal_total_effect_window", "causal_direct_effect_window"]: 
+    if args.graft_type not in ["decomposition", "causal_total_effect", "causal_total_effect_window", "causal_direct_effect_window", "svd", "circuit"]: 
         raise ValueError("graft_type not recognized")
     if args.ablation_method not in ["noise", "resample", "resample_uniform"]: 
         raise ValueError("ablation_method not recognized")
@@ -145,6 +145,12 @@ def run_prompt(batch, args):
         graft = activation_grafts.CausalTotalEffectWindowGraft(**graft_args)
     elif args.graft_type == "causal_direct_effect_window":
         raise NotImplementedError("Causal Direct Effect Window Graft not implemented")
+    elif args.graft_type == "svd":
+        graft = activation_grafts.SVD_Graft(**graft_args)
+    elif args.graft_type == "circuit": 
+        graft = activation_grafts.CircuitGraft(**graft_args)
+    else: 
+        raise ValueError("graft_type not recognized")
 
     graft.run()
     lora_configs = graft.generate_lora_configs(args)
@@ -311,32 +317,42 @@ def run_prompt(batch, args):
         lm_net = lm_net.cuda()
 
     optimizer = create_adam_optimizer_from_args(lm_net, args)
-    
-    print("eval")
-    test_evaluation = evaluate(lm_net,valid_loader,args,tokenizer,)
-    test_evaluation = {f"testing_{k}": v for k, v in test_evaluation.items()}
-    #evaluating specificity
-    neighbourhood_evaluation = evaluate(lm_net,neighbourhood_loader,args,tokenizer)
-    neighbourhood_evaluation = {f"neighbourhood_{k}": v for k, v in neighbourhood_evaluation.items()}
-
-    same_attribute_evaluation = evaluate(lm_net,same_attribute_loader,args,tokenizer)
-    same_attribute_evaluation = {f"same_attribute_{k}": v for k, v in same_attribute_evaluation.items()}
-    
-    init_evaluation = {**test_evaluation, **neighbourhood_evaluation, **same_attribute_evaluation}
-    
     if args.max_step is None:
         args.max_step = (args.max_epoch * train_data.num_batches) 
         print('set max_step:', args.max_step)
-    print("Training")
     scheduler = create_optimizer_scheduler(optimizer, args)
     if args.fp16:
         lm_net, optimizer = amp.initialize(lm_net, optimizer, opt_level="O1")
+        
+        
+    print("eval")
+    init_train_logits = initial_logits(lm_net, train_loader, args)
+    init_val_logits = initial_logits(lm_net, valid_loader, args)
+    init_train_logits = [t.detach().to("cpu") for t in init_train_logits]
+    init_val_logits = [t.detach().to("cpu") for t in init_val_logits]
+    
+    test_evaluation = evaluate(model=lm_net,valid_loader=valid_loader,args=args,tokenizer=tokenizer,
+                               init_logits = init_val_logits, use_kl_reg=args.use_kl_reg)
+    test_evaluation = {f"testing_{k}": v for k, v in test_evaluation.items()}
+    #evaluating specificity
+    neighbourhood_evaluation = evaluate(model=lm_net,valid_loader=neighbourhood_loader,args=args,tokenizer=tokenizer,
+                               init_logits = None, use_kl_reg=False)
+    neighbourhood_evaluation = {f"neighbourhood_{k}": v for k, v in neighbourhood_evaluation.items()}
+
+    same_attribute_evaluation = evaluate(model=lm_net,valid_loader=same_attribute_loader,args=args,tokenizer=tokenizer,
+                               init_logits = init_val_logits, use_kl_reg=False)
+    same_attribute_evaluation = {f"same_attribute_{k}": v for k, v in same_attribute_evaluation.items()}
+    
+    init_evaluation = {**test_evaluation, **neighbourhood_evaluation, **same_attribute_evaluation}
+
+
+    print("Training")
     try:
         train_step = 0
         for epoch in itertools.count(start=1):
             train_step = train_validate(
-                lm_net, optimizer, scheduler, train_loader, valid_loader, args, 
-                train_step=train_step, epoch=epoch
+                model=lm_net, optimizer=optimizer, scheduler=scheduler, train_loader=train_loader, valid_loader=valid_loader,args=args, 
+                train_step=train_step, epoch=epoch, init_train_logits=init_train_logits, init_valid_logits=init_val_logits,
             )
             if train_step >= args.max_step or (args.max_epoch is not None and epoch >= args.max_epoch):
                 if args.rank == 0:
@@ -350,13 +366,16 @@ def run_prompt(batch, args):
         early_exit = True
 
     print("eval")
-    test_evaluation = evaluate(lm_net,valid_loader,args,tokenizer,)
+    test_evaluation = evaluate(model=lm_net,valid_loader=valid_loader,args=args,tokenizer=tokenizer,
+                               init_logits = init_val_logits, use_kl_reg=args.use_kl_reg)
     test_evaluation = {f"testing_{k}": v for k, v in test_evaluation.items()}
     #evaluating specificity
-    neighbourhood_evaluation = evaluate(lm_net,neighbourhood_loader,args,tokenizer)
+    neighbourhood_evaluation = evaluate(model=lm_net,valid_loader=neighbourhood_loader,args=args,tokenizer=tokenizer,
+                               init_logits = None, use_kl_reg=False)
     neighbourhood_evaluation = {f"neighbourhood_{k}": v for k, v in neighbourhood_evaluation.items()}
 
-    same_attribute_evaluation = evaluate(lm_net,same_attribute_loader,args,tokenizer)
+    same_attribute_evaluation = evaluate(model=lm_net,valid_loader=same_attribute_loader,args=args,tokenizer=tokenizer,
+                               init_logits = init_val_logits, use_kl_reg=False)
     same_attribute_evaluation = {f"same_attribute_{k}": v for k, v in same_attribute_evaluation.items()}
     
     total_evaluation = {**test_evaluation, **neighbourhood_evaluation, **same_attribute_evaluation}

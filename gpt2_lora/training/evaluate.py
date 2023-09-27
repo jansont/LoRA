@@ -4,7 +4,7 @@ import torch
 from gpt2_lora.utils import AverageMeter
 from torch.nn.functional import softmax
 
-def get_scores(model, data, args): 
+def get_scores(model, data, init_logits, use_kl_reg, args): 
     _input = data["input"].to(args.device)
     _target = data["target"].to(args.device)
     _mask = data["mask"].to(args.device)
@@ -14,7 +14,8 @@ def get_scores(model, data, args):
     
 
     lm_logits, _loss, = model(
-        _input, lm_labels=_target, lm_mask=_mask, is_report_accuracy=False) 
+        _input, lm_labels=_target, lm_mask=_mask, is_report_accuracy=False, init_logits=init_logits, use_kl_reg=use_kl_reg, 
+        args=args) 
     
     loss = _loss.mean()
     _target = _target.unsqueeze(dim=-1)
@@ -31,7 +32,7 @@ def get_scores(model, data, args):
     return loss,target_logits, target_probabilities
     
 
-def evaluate(model, valid_loader, args, tokenizer=None):
+def evaluate(model, valid_loader, init_logits,args, use_kl_reg=False,tokenizer=None):
     model.eval()
     total_loss = 0.
     start_time = time.time()
@@ -52,8 +53,9 @@ def evaluate(model, valid_loader, args, tokenizer=None):
             data = {key: value for key, value in all_data["normal"].items()}
             reference_data = {key: value for key, value in all_data["reference"].items()}
 
-            loss,target_logits, target_probabilities = get_scores(model, data, args)
-            ref_loss, ref_target_logits, ref_target_probabilities = get_scores(model, reference_data, args)
+            init_logits_ = init_logits[idx] if init_logits is not None else None
+            loss,target_logits, target_probabilities = get_scores(model=model, data=data, args=args, use_kl_reg=use_kl_reg, init_logits=init_logits_)
+            ref_loss, ref_target_logits, ref_target_probabilities = get_scores(model=model, data=reference_data, args=args, use_kl_reg=use_kl_reg, init_logits=init_logits_)
 
             delta_loss = loss - ref_loss
             delta_logit  = target_logits - ref_target_logits
